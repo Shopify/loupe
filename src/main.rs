@@ -7,6 +7,31 @@ pub struct Type {
     fields: Vec<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct TypeId(usize);
+
+pub struct TypeSet {
+    types: std::collections::HashSet<TypeId>,
+}
+
+impl TypeSet {
+    pub fn empty() -> TypeSet {
+        TypeSet { types: std::collections::HashSet::new() }
+    }
+
+    pub fn single(ty: TypeId) -> TypeSet {
+        TypeSet { types: std::collections::HashSet::from([ty]) }
+    }
+
+    pub fn union(self: &Self, other: &TypeSet) -> TypeSet {
+        TypeSet { types: self.types.union(&other.types).map(|ty| *ty).collect() }
+    }
+
+    pub fn intersection(self: &Self, other: &TypeSet) -> TypeSet {
+        TypeSet { types: self.types.intersection(&other.types).map(|ty| *ty).collect() }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Value {
     Int(i64),
@@ -71,17 +96,25 @@ pub struct CFG {
     insns: Vec<Insn>,
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
+    // Permanent home of every type; grows without bound
+    types: Vec<Type>,
 }
 
 impl CFG {
     pub fn new() -> CFG {
         let entry = Block::empty();
-        CFG { entrypoint: BlockId(0), insns: vec![], blocks: vec![entry] }
+        CFG { entrypoint: BlockId(0), insns: vec![], blocks: vec![entry], types: vec![] }
     }
 
     pub fn add_insn(&mut self, insn: Insn) -> InsnId {
         let result = InsnId(self.insns.len());
         self.insns.push(insn);
+        result
+    }
+
+    pub fn add_type(&mut self, ty: Type) -> TypeId {
+        let result = TypeId(self.types.len());
+        self.types.push(ty);
         result
     }
 
