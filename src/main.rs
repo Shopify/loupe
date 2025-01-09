@@ -16,19 +16,31 @@ pub struct TypeSet {
 
 impl TypeSet {
     pub fn empty() -> TypeSet {
-        TypeSet { types: std::collections::HashSet::new() }
+        TypeSet {
+            types: std::collections::HashSet::new(),
+        }
     }
 
     pub fn single(ty: TypeId) -> TypeSet {
-        TypeSet { types: std::collections::HashSet::from([ty]) }
+        TypeSet {
+            types: std::collections::HashSet::from([ty]),
+        }
     }
 
     pub fn union(self: &Self, other: &TypeSet) -> TypeSet {
-        TypeSet { types: self.types.union(&other.types).map(|ty| *ty).collect() }
+        TypeSet {
+            types: self.types.union(&other.types).map(|ty| *ty).collect(),
+        }
     }
 
     pub fn intersection(self: &Self, other: &TypeSet) -> TypeSet {
-        TypeSet { types: self.types.intersection(&other.types).map(|ty| *ty).collect() }
+        TypeSet {
+            types: self
+                .types
+                .intersection(&other.types)
+                .map(|ty| *ty)
+                .collect(),
+        }
     }
 }
 
@@ -80,12 +92,15 @@ impl Insn {
 #[derive(Debug)]
 pub struct Block {
     params: Vec<Opnd>,
-    insns: Vec<InsnId>
+    insns: Vec<InsnId>,
 }
 
 impl Block {
     pub fn empty() -> Block {
-        Block { params: vec![], insns: vec![] }
+        Block {
+            params: vec![],
+            insns: vec![],
+        }
     }
 }
 
@@ -103,7 +118,12 @@ pub struct CFG {
 impl CFG {
     pub fn new() -> CFG {
         let entry = Block::empty();
-        CFG { entrypoint: BlockId(0), insns: vec![], blocks: vec![entry], types: vec![] }
+        CFG {
+            entrypoint: BlockId(0),
+            insns: vec![],
+            blocks: vec![entry],
+            types: vec![],
+        }
     }
 
     pub fn add_insn(&mut self, insn: Insn) -> InsnId {
