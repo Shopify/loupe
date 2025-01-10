@@ -295,13 +295,39 @@ mod tests {
     }
 }
 
+
+
+
+// TODO: do we want a struct to represent programs?
+struct Program
+{
+    // Classes
+
+
+    // Functions/ISEQs?
+
+
+    // CFG?
+
+}
+
+
 // TODO: we need a function to generate a big graph/program that's going to be
 // a torture test
+//
 // Something like 10-20K classes and 20K methods that randomly call each other
 // We want the size of it to approximate the size of our production apps
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG {
+//
+// IIRC the average size of a Ruby method is something like 8 bytecode instructions
+// So we can generate many simple methods/functions
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
+{
     todo!();
 }
+
+
+
+
 
 fn main() {
     fn sample_cfg() -> CFG {
