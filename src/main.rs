@@ -64,7 +64,6 @@ impl std::fmt::Display for InsnId {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opnd {
-    // Block argument
     Arg(u32),
 
     // Constant
@@ -73,6 +72,16 @@ pub enum Opnd {
     // Output of a previous insn in a block
     // that dominates this one
     InsnOut { idx: InsnId },
+}
+
+impl std::fmt::Display for Opnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opnd::Const(_) => write!(f, "(Const)"),
+            Opnd::InsnOut { insn_id, num_bits } => write!(f, "{insn_id}:{num_bits}"),
+            Opnd::Arg(idx) => write!(f, "arg{idx}"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -109,7 +118,42 @@ impl Insn {
 
 impl std::fmt::Display for Insn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Insn")
+        match self {
+            Insn::Send(receiver, args) => {
+                write!(f, "Send {receiver}")?;
+                for arg in args {
+                    write!(f, " {arg}")?;
+                }
+                Ok(())
+            },
+            Insn::Return(opnd) => {
+                write!(f, "Return {opnd}")
+            }
+            Insn::NewInstance(_, _) => {
+                write!(f, "NewInstance")
+            }
+            Insn::IvarSet(_, _, _) => {
+                write!(f, "IvarSet")
+            }
+            Insn::IvarGet(_, _) => {
+                write!(f, "IvarGet")
+            }
+            Insn::IsFixnum(_) => {
+                write!(f, "IsFixnum")
+            }
+            Insn::FixnumAdd(left, right) => {
+                write!(f, "FixnumAdd {left}, {right}")
+            }
+            Insn::FixnumLt(_, _) => {
+                write!(f, "FixnumLt")
+            }
+            Insn::IfTrue(_, _, _) => {
+                write!(f, "IfTrue")
+            }
+            Insn::Jump(_) => {
+                write!(f, "Jump")
+            }
+        }
     }
 }
 
@@ -172,9 +216,10 @@ impl CFG {
         result
     }
 
-    pub fn push(&mut self, block: BlockId, insn: Insn) {
-        let insn_id = self.add_insn(insn);
-        self.blocks[block.0].insns.push(insn_id)
+    pub fn push(&mut self, block: BlockId, insn: Insn) -> InsnId {
+        let result = self.add_insn(insn);
+        self.blocks[block.0].insns.push(result);
+        result
     }
 }
 
@@ -240,7 +285,11 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
 fn main() {
     fn sample_cfg() -> CFG {
         let mut result = CFG::new();
-        result.push(result.entrypoint, Insn::Return(Opnd::Const(Value::Int(5))));
+        let add = result.push(result.entrypoint, Insn::FixnumAdd(Opnd::Const(Value::Int(3)),
+        Opnd::Const(Value::Int(4))));
+        result.push(result.entrypoint, Insn::Return(
+                Opnd::InsnOut { insn_id: add, num_bits: 64 }
+        ));
         result
     }
     let cfg = sample_cfg();
