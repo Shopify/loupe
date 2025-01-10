@@ -1,17 +1,40 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::collections::HashMap;
+
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Type {
+pub struct Class {
     name: String,
+
+    // List of fields
     fields: Vec<String>,
+
+    // List of methods
+    methods: HashMap<String, FunId>,
+
+    // Constructor method
+    ctor: FunId,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct TypeId(usize);
+pub struct ClassId(usize);
+
+// Function id
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct FunId(usize);
+
+// TODO: try this optimization later when we have a performance baseline
+/*
+pub enum TypeSet {
+    Empty,
+    Atom(ClassId),
+    Union(set),
+}
+*/
 
 pub struct TypeSet {
-    types: std::collections::HashSet<TypeId>,
+    types: std::collections::HashSet<ClassId>,
 }
 
 impl TypeSet {
@@ -21,7 +44,7 @@ impl TypeSet {
         }
     }
 
-    pub fn single(ty: TypeId) -> TypeSet {
+    pub fn single(ty: ClassId) -> TypeSet {
         TypeSet {
             types: std::collections::HashSet::from([ty]),
         }
@@ -50,7 +73,7 @@ pub enum Value {
     Int(i64),
     Str(String),
     Name(String),
-    Object(Type),
+    Object(Class), // TODO: ClassId
 }
 
 impl std::fmt::Display for Value {
@@ -107,7 +130,12 @@ impl std::fmt::Display for BlockId {
 
 #[derive(Debug)]
 pub enum Insn {
+    // Send may need to branch to a return block (call continuation)
+    // Send has an output
+    // How do we handle phi nodes, branches following calls?
+    // May be simpler if followed by a branch
     Send(Opnd, Vec<Opnd>),
+
     Return(Opnd),
     NewInstance(Opnd, Vec<Opnd>),
     IvarSet(Opnd, Opnd, Opnd),
@@ -115,6 +143,9 @@ pub enum Insn {
     IsFixnum(Opnd),
     FixnumAdd(Opnd, Opnd),
     FixnumLt(Opnd, Opnd),
+
+    // ?
+    //RefineType(Opnd, Type)
 
     // Maxime says: for branches we're going to need
     // to supply block argumens for each target
@@ -196,24 +227,26 @@ impl Block {
 }
 
 #[derive(Debug)]
-pub struct CFG {
+pub struct Function {
     entrypoint: BlockId,
+
     // Permanent home of every instruction; grows without bound
     insns: Vec<Insn>,
+
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
-    // Permanent home of every type; grows without bound
-    types: Vec<Type>,
+
+    // We may need to keep track of uses (successors) of functions
+    // to implement an SCCP-like algorithm?
 }
 
-impl CFG {
-    pub fn new() -> CFG {
+impl Function {
+    pub fn new() -> Function {
         let entry = Block::empty();
-        CFG {
+        Function {
             entrypoint: BlockId(0),
             insns: vec![],
             blocks: vec![entry],
-            types: vec![],
         }
     }
 
@@ -225,12 +258,6 @@ impl CFG {
 
     pub fn insn_at(&self, insn_id: InsnId) -> &Insn {
         &self.insns[insn_id.0]
-    }
-
-    pub fn add_type(&mut self, ty: Type) -> TypeId {
-        let result = TypeId(self.types.len());
-        self.types.push(ty);
-        result
     }
 
     pub fn alloc_block(&mut self) -> BlockId {
@@ -247,7 +274,7 @@ impl CFG {
 }
 
 struct DisplayBlock<'a> {
-    cfg: &'a CFG,
+    function: &'a Function,
     block: &'a Block,
     indent: usize,
 }
@@ -256,7 +283,7 @@ impl<'a> std::fmt::Display for DisplayBlock<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let indent = self.indent;
         for insn_id in self.block.insns.iter() {
-            let insn = self.cfg.insn_at(*insn_id);
+            let insn = self.function.insn_at(*insn_id);
             // TODO(max): Figure out how to get `indent' worth of spaces
             write!(f, "  {insn_id:<indent$} = {insn}\n")?;
         }
@@ -264,11 +291,11 @@ impl<'a> std::fmt::Display for DisplayBlock<'a> {
     }
 }
 
-impl std::fmt::Display for CFG {
+impl std::fmt::Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (idx, block) in self.blocks.iter().enumerate() {
             let display_block = DisplayBlock {
-                cfg: self,
+                function: self,
                 block: &block,
                 indent: 2,
             };
@@ -282,15 +309,15 @@ impl std::fmt::Display for CFG {
 mod tests {
     use super::*;
 
-    fn sample_cfg() -> CFG {
-        let mut result = CFG::new();
+    fn sample_function() -> Function {
+        let mut result = Function::new();
         result.push(result.entrypoint, Insn::Return(Opnd::Const(Value::Int(5))));
         result
     }
 
     #[test]
     fn it_works() {
-        let cfg = sample_cfg();
+        let fun = sample_function();
         ()
     }
 }
@@ -299,17 +326,39 @@ mod tests {
 
 
 // TODO: do we want a struct to represent programs?
+#[derive(Default, Debug)]
 struct Program
 {
-    // Classes
+    // Permanent home of every class; grows without bound
+    // Maps ClassId to class objects
+    classes: Vec<Class>,
+
+    // Permanent home of every function
+    funs: Vec<Function>,
+
+    // Main/entry function
+    main: FunId,
+}
+
+impl Program
+{
+    // TODO: pre-register types for things like Nil, Integer, etc?
+
+    // Register a class
+    pub fn reg_class(&mut self, ty: Class) -> ClassId {
+        let result = ClassId(self.classes.len());
+        self.classes.push(ty);
+        result
+    }
 
 
-    // Functions/ISEQs?
-
-
-    // CFG?
 
 }
+
+
+
+
+
 
 
 // TODO: we need a function to generate a big graph/program that's going to be
@@ -320,7 +369,7 @@ struct Program
 //
 // IIRC the average size of a Ruby method is something like 8 bytecode instructions
 // So we can generate many simple methods/functions
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function
 {
     todo!();
 }
@@ -330,8 +379,8 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
 
 
 fn main() {
-    fn sample_cfg() -> CFG {
-        let mut result = CFG::new();
+    fn sample_function() -> Function {
+        let mut result = Function::new();
         let add = result.push(
             result.entrypoint,
             Insn::FixnumAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
@@ -353,6 +402,6 @@ fn main() {
         result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
         result
     }
-    let cfg = sample_cfg();
-    println!("{cfg}");
+    let function = sample_function();
+    println!("{function}");
 }
