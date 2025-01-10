@@ -75,15 +75,15 @@ pub enum Insn {
     IsFixnum(Opnd),
     FixnumAdd(Opnd, Opnd),
     FixnumLt(Opnd, Opnd),
-    CondBranch(Opnd, BlockId, BlockId),
-    Branch(BlockId),
+    IfTrue(Opnd, BlockId, BlockId),
+    Jump(BlockId),
 }
 
 impl Insn {
     pub fn is_terminator(self) -> bool {
         use Insn::*;
         match self {
-            Return(_) | CondBranch(_, _, _) | Branch(_) => true,
+            Return(_) | IfTrue(_, _, _) | Jump(_) => true,
             _ => false,
         }
     }
