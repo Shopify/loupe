@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+#![allow(unused_variables)]
+
 // use std::fmt;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -46,6 +48,7 @@ impl TypeSet {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Value {
+    Nil,
     Int(i64),
     Str(String),
     Name(String),
@@ -57,9 +60,15 @@ pub struct InsnId(usize);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opnd {
-    Const(Value),
-    InsnOut { idx: InsnId, num_bits: u8 },
+    // Block argument
     Arg(u32),
+
+    // Constant
+    Const(Value),
+
+    // Output of a previous insn in a block
+    // that dominates this one
+    InsnOut { idx: InsnId },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -75,6 +84,11 @@ pub enum Insn {
     IsFixnum(Opnd),
     FixnumAdd(Opnd, Opnd),
     FixnumLt(Opnd, Opnd),
+
+    // Maxime says: for branches we're going to need
+    // to supply block argumens for each target
+    // we may also want to make IfTrue a one-sided branch for simplicity?
+    // do we care about having only one final branch at the end of blocks?
     IfTrue(Opnd, BlockId, BlockId),
     Jump(BlockId),
 }
@@ -166,6 +180,20 @@ mod tests {
         ()
     }
 }
+
+
+
+// TODO: we need a function to generate a big graph/program that's going to be
+// a torture test
+// Something like 10-20K classes and 20K methods that randomly call each other
+// We want the size of it to approximate the size of our production apps
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
+{
+    todo!();
+}
+
+
+
 
 fn main() {
     fn sample_cfg() -> CFG {
