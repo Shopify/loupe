@@ -58,7 +58,7 @@ impl std::fmt::Display for Value {
         match self {
             Value::Nil => write!(f, "Nil"),
             Value::Int(val) => write!(f, "{val}"),
-            Value::Str(val) => write!(f, "{val}"),
+            Value::Str(val) => write!(f, "{val:?}"),
             Value::Name(val) => write!(f, "{val}"),
             Value::Object(_) => write!(f, "<Object>"),
         }
@@ -318,7 +318,7 @@ fn main() {
         let conseq = result.alloc_block();
         let alt = result.alloc_block();
         let ift = result.push(result.entrypoint, Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt));
-        result.push(conseq, Insn::Return(Opnd::Const(Value::Int(1))));
+        result.push(conseq, Insn::Return(Opnd::Const(Value::Str("hello".into()))));
         result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
         result
     }
