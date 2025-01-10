@@ -238,6 +238,9 @@ pub struct Function {
 
     // We may need to keep track of uses (successors) of functions
     // to implement an SCCP-like algorithm?
+
+    // List of caller instructions
+    //callers
 }
 
 impl Function {
