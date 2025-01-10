@@ -235,7 +235,6 @@ pub struct Function {
 
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
-
     // We may need to keep track of uses (successors) of functions
     // to implement an SCCP-like algorithm?
 
@@ -343,13 +342,9 @@ mod tests {
     }
 }
 
-
-
-
 // TODO: do we want a struct to represent programs?
 #[derive(Default, Debug)]
-struct Program
-{
+struct Program {
     // Permanent home of every class; grows without bound
     // Maps ClassId to class objects
     classes: Vec<Class>,
@@ -361,8 +356,7 @@ struct Program
     main: FunId,
 }
 
-impl Program
-{
+impl Program {
     // TODO: pre-register types for things like Nil, Integer, etc?
 
     // Register a class
@@ -371,16 +365,7 @@ impl Program
         self.classes.push(ty);
         result
     }
-
-
-
 }
-
-
-
-
-
-
 
 // TODO: we need a function to generate a big graph/program that's going to be
 // a torture test
@@ -390,14 +375,9 @@ impl Program
 //
 // IIRC the average size of a Ruby method is something like 8 bytecode instructions
 // So we can generate many simple methods/functions
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function
-{
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
     todo!();
 }
-
-
-
-
 
 fn main() {
     let function = sample_function();
