@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-// use std::fmt;
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Type {
     name: String,
@@ -55,8 +53,14 @@ pub enum Value {
     Object(Type),
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InsnId(usize);
+
+impl std::fmt::Display for InsnId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "v{}", self.0)
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opnd {
@@ -103,6 +107,12 @@ impl Insn {
     }
 }
 
+impl std::fmt::Display for Insn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Insn")
+    }
+}
+
 #[derive(Debug)]
 pub struct Block {
     params: Vec<Opnd>,
@@ -146,6 +156,10 @@ impl CFG {
         result
     }
 
+    pub fn insn_at(&self, insn_id: InsnId) -> &Insn {
+        &self.insns[insn_id.0]
+    }
+
     pub fn add_type(&mut self, ty: Type) -> TypeId {
         let result = TypeId(self.types.len());
         self.types.push(ty);
@@ -161,6 +175,34 @@ impl CFG {
     pub fn push(&mut self, block: BlockId, insn: Insn) {
         let insn_id = self.add_insn(insn);
         self.blocks[block.0].insns.push(insn_id)
+    }
+}
+
+struct DisplayBlock<'a> {
+    cfg: &'a CFG,
+    block: &'a Block,
+    indent: usize,
+}
+
+impl<'a> std::fmt::Display for DisplayBlock<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let indent = self.indent;
+        for insn_id in self.block.insns.iter() {
+            let insn = self.cfg.insn_at(*insn_id);
+            // TODO(max): Figure out how to get `indent' worth of spaces
+            write!(f, "  {insn_id:<indent$} = {insn}\n")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for CFG {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (idx, block) in self.blocks.iter().enumerate() {
+            let display_block = DisplayBlock { cfg: self, block: &block, indent: 2 };
+            write!(f, "bb {idx} {{\n{display_block}}}")?;
+        }
+        Ok(())
     }
 }
 
@@ -202,5 +244,5 @@ fn main() {
         result
     }
     let cfg = sample_cfg();
-    println!("{:?}", cfg);
+    println!("{cfg}");
 }
