@@ -308,15 +308,33 @@ impl std::fmt::Display for Function {
     }
 }
 
+fn sample_function() -> Function {
+    let mut result = Function::new();
+    let add = result.push(
+        result.entrypoint,
+        Insn::FixnumAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
+    );
+    let lt = result.push(
+        result.entrypoint,
+        Insn::FixnumLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
+    );
+    let conseq = result.alloc_block();
+    let alt = result.alloc_block();
+    let ift = result.push(
+        result.entrypoint,
+        Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt),
+    );
+    result.push(
+        conseq,
+        Insn::Return(Opnd::Const(Value::Str("hello".into()))),
+    );
+    result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn sample_function() -> Function {
-        let mut result = Function::new();
-        result.push(result.entrypoint, Insn::Return(Opnd::Const(Value::Int(5))));
-        result
-    }
 
     #[test]
     fn it_works() {
@@ -382,29 +400,6 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function
 
 
 fn main() {
-    fn sample_function() -> Function {
-        let mut result = Function::new();
-        let add = result.push(
-            result.entrypoint,
-            Insn::FixnumAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
-        );
-        let lt = result.push(
-            result.entrypoint,
-            Insn::FixnumLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
-        );
-        let conseq = result.alloc_block();
-        let alt = result.alloc_block();
-        let ift = result.push(
-            result.entrypoint,
-            Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt),
-        );
-        result.push(
-            conseq,
-            Insn::Return(Opnd::Const(Value::Str("hello".into()))),
-        );
-        result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
-        result
-    }
     let function = sample_function();
     println!("{function}");
 }
