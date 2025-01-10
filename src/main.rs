@@ -56,6 +56,7 @@ pub enum Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Value::Nil => write!(f, "Nil"),
             Value::Int(val) => write!(f, "{val}"),
             Value::Str(val) => write!(f, "{val}"),
             Value::Name(val) => write!(f, "{val}"),
@@ -82,14 +83,14 @@ pub enum Opnd {
 
     // Output of a previous insn in a block
     // that dominates this one
-    InsnOut { idx: InsnId },
+    InsnOut(InsnId),
 }
 
 impl std::fmt::Display for Opnd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Opnd::Const(val) => write!(f, "(Const {val})"),
-            Opnd::InsnOut { insn_id, num_bits } => write!(f, "{insn_id}:{num_bits}"),
+            Opnd::InsnOut(insn_id) => write!(f, "{insn_id}"),
             Opnd::Arg(idx) => write!(f, "arg{idx}"),
         }
     }
@@ -303,12 +304,6 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
     todo!();
 }
 
-fn insn(insn_id: InsnId) -> Opnd {
-    Opnd::InsnOut {
-        insn_id
-    }
-}
-
 fn main() {
     fn sample_cfg() -> CFG {
         let mut result = CFG::new();
@@ -318,11 +313,11 @@ fn main() {
         );
         let lt = result.push(
             result.entrypoint,
-            Insn::FixnumLt(insn(add), Opnd::Const(Value::Int(8))),
+            Insn::FixnumLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
         );
         let conseq = result.alloc_block();
         let alt = result.alloc_block();
-        let ift = result.push(result.entrypoint, Insn::IfTrue(insn(lt), conseq, alt));
+        let ift = result.push(result.entrypoint, Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt));
         result.push(conseq, Insn::Return(Opnd::Const(Value::Int(1))));
         result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
         result
