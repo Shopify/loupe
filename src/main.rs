@@ -299,8 +299,7 @@ mod tests {
 // a torture test
 // Something like 10-20K classes and 20K methods that randomly call each other
 // We want the size of it to approximate the size of our production apps
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG
-{
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> CFG {
     todo!();
 }
 
@@ -317,8 +316,14 @@ fn main() {
         );
         let conseq = result.alloc_block();
         let alt = result.alloc_block();
-        let ift = result.push(result.entrypoint, Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt));
-        result.push(conseq, Insn::Return(Opnd::Const(Value::Str("hello".into()))));
+        let ift = result.push(
+            result.entrypoint,
+            Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt),
+        );
+        result.push(
+            conseq,
+            Insn::Return(Opnd::Const(Value::Str("hello".into()))),
+        );
         result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
         result
     }
