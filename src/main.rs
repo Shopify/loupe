@@ -41,6 +41,8 @@ pub enum Type {
     Bottom, // Empty; no values possible; dead code
     Const(Value),
     Exact(ClassId),
+    // TODO(max): Support limited (shallow) type unions because things will often be Integer|nil, etc
+    // Either(Type, Type),
     // No inheritance, otherwise we would also need an Inexact
     Top, // Unknown; could be anything
 }
