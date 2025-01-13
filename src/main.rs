@@ -304,7 +304,7 @@ impl ManagedFunction {
                     Type::Top
                 }
             }
-            Insn::Lt(..) => Type::Exact(BOOL_TYPE),
+            Insn::Lt(..) => Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE])),
             _ => Type::Top,
         }
     }
@@ -520,13 +520,17 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 
 static INT_TYPE: ClassId = ClassId(0);
 static STR_TYPE: ClassId = ClassId(1);
-static BOOL_TYPE: ClassId = ClassId(2);
+static TRUE_TYPE: ClassId = ClassId(2);
+static FALSE_TYPE: ClassId = ClassId(3);
+static NIL_TYPE: ClassId = ClassId(4);
 
 fn main() {
     let mut program = Program::default();
     let int_ctor = program.reg_native_fun(NativeFunction("Integer.new".into()));
     let str_ctor = program.reg_native_fun(NativeFunction("String.new".into()));
-    let bool_ctor = program.reg_native_fun(NativeFunction("Bool.new".into()));
+    let true_ctor = program.reg_native_fun(NativeFunction("TrueClass.new".into()));
+    let false_ctor = program.reg_native_fun(NativeFunction("FalseClass.new".into()));
+    let nil_ctor = program.reg_native_fun(NativeFunction("NilClass.new".into()));
     program.reg_class(ClassDesc {
         name: "Integer".into(),
         fields: vec![],
@@ -540,10 +544,22 @@ fn main() {
         ctor: str_ctor,
     });
     program.reg_class(ClassDesc {
-        name: "Bool".into(),
+        name: "TrueClass".into(),
         fields: vec![],
         methods: HashMap::new(),
-        ctor: bool_ctor,
+        ctor: true_ctor,
+    });
+    program.reg_class(ClassDesc {
+        name: "FalseClass".into(),
+        fields: vec![],
+        methods: HashMap::new(),
+        ctor: false_ctor,
+    });
+    program.reg_class(ClassDesc {
+        name: "NilClass".into(),
+        fields: vec![],
+        methods: HashMap::new(),
+        ctor: nil_ctor,
     });
     let mut function = sample_function();
     function.reflow_types();
