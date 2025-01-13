@@ -76,6 +76,7 @@ pub enum Value {
     Int(i64),
     Str(String),
     Name(String),
+    Fun(FunId),
     Object(Class), // TODO: ClassId
 }
 
@@ -87,6 +88,7 @@ impl std::fmt::Display for Value {
             Value::Str(val) => write!(f, "{val:?}"),
             Value::Name(val) => write!(f, "{val}"),
             Value::Object(_) => write!(f, "<Object>"),
+            Value::Fun(id) => write!(f, "<fun {}>", id.0),
         }
     }
 }
@@ -236,6 +238,9 @@ pub struct Function {
     // Permanent home of every instruction; grows without bound
     insns: Vec<Insn>,
 
+    // Type of each insn; index by InsnId just like insns
+    insn_types: Vec<TypeSet>,
+
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
 
@@ -254,6 +259,7 @@ impl Function {
         Function {
             entrypoint: BlockId(0),
             insns: vec![],
+            insn_types: vec![],
             blocks: vec![entry],
         }
     }
