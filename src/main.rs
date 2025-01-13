@@ -139,9 +139,9 @@ pub enum Insn {
     NewInstance(Opnd, Vec<Opnd>),
     IvarSet(Opnd, Opnd, Opnd),
     IvarGet(Opnd, Opnd),
-    IsFixnum(Opnd),
-    FixnumAdd(Opnd, Opnd),
-    FixnumLt(Opnd, Opnd),
+    IsInt(Opnd),
+    IntAdd(Opnd, Opnd),
+    IntLt(Opnd, Opnd),
 
     // ?
     //RefineType(Opnd, Type)
@@ -191,14 +191,14 @@ impl std::fmt::Display for Insn {
             Insn::IvarGet(receiver, attr) => {
                 write!(f, "IvarGet {receiver}, {attr}")
             }
-            Insn::IsFixnum(opnd) => {
-                write!(f, "IsFixnum {opnd}")
+            Insn::IsInt(opnd) => {
+                write!(f, "IsInt {opnd}")
             }
-            Insn::FixnumAdd(left, right) => {
-                write!(f, "FixnumAdd {left}, {right}")
+            Insn::IntAdd(left, right) => {
+                write!(f, "IntAdd {left}, {right}")
             }
-            Insn::FixnumLt(left, right) => {
-                write!(f, "FixnumLt {left}, {right}")
+            Insn::IntLt(left, right) => {
+                write!(f, "IntLt {left}, {right}")
             }
             Insn::IfTrue(cond, conseq, alt) => {
                 write!(f, "IfTrue {cond} then {conseq} else {alt}")
@@ -340,11 +340,11 @@ fn sample_function() -> Function {
     let mut result = ManagedFunction::new();
     let add = result.push(
         result.entrypoint,
-        Insn::FixnumAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
+        Insn::IntAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
     );
     let lt = result.push(
         result.entrypoint,
-        Insn::FixnumLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
+        Insn::IntLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
     );
     let conseq = result.alloc_block();
     let alt = result.alloc_block();
