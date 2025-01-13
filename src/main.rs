@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ClassDesc {
@@ -43,6 +43,7 @@ pub enum Type {
     Exact(ClassId),
     // TODO(max): Support limited (shallow) type unions because things will often be Integer|nil, etc
     // Either(Type, Type),
+    Union(HashSet<ClassId>),
     // This would also help with TrueClass|FalseClass, since there's no bool type in Ruby.
     // No inheritance, otherwise we would also need an Inexact
     Top, // Unknown; could be anything
@@ -73,6 +74,9 @@ impl std::fmt::Display for Type {
             Type::Bottom => write!(f, "Bottom"),
             Type::Const(v) => write!(f, "Const[{v}]"),
             Type::Exact(class_id) => write!(f, "Class@{}", class_id.0),
+            Type::Union(class_ids) =>
+                // TODO(max): Assert size >= 2
+                write!(f, "{}", class_ids.into_iter().map(|id| format!("Class@{}", id.0)).collect::<Vec<_>>().join("|")),
             Type::Top => write!(f, "Top"),
         }
     }
@@ -145,7 +149,7 @@ pub enum Insn {
     // Send has an output
     // How do we handle phi nodes, branches following calls?
     // May be simpler if followed by a branch
-    Send(Opnd, Vec<Opnd>),
+    Send { receiver: Opnd, name: Opnd, args: Vec<Opnd> },
 
     Return(Opnd),
     NewInstance(Opnd, Vec<Opnd>),
@@ -190,8 +194,8 @@ fn fmt_args(f: &mut std::fmt::Formatter<'_>, args: &Vec<Opnd>) -> std::fmt::Resu
 impl std::fmt::Display for Insn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Insn::Send(receiver, args) => {
-                write!(f, "Send {receiver}")?;
+            Insn::Send { receiver, name, args } => {
+                write!(f, "Send {receiver}, {name}")?;
                 fmt_args(f, args)
             }
             Insn::Return(opnd) => {
