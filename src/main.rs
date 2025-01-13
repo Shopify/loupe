@@ -3,11 +3,11 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeSet};
 use rand::prelude::*;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Class {
+pub struct ClassDesc {
     name: String,
 
     // List of fields
@@ -29,55 +29,49 @@ pub struct FunId(usize);
 
 // TODO: try this optimization later when we have a performance baseline
 /*
-pub enum TypeSet {
+pub enum Type {
     Empty,
     Atom(ClassId),
     Union(set),
 }
 */
 
-pub struct TypeSet {
-    types: std::collections::HashSet<ClassId>,
+// The type an IR Insn can have.
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub enum Type {
+    Bottom, // Empty; no values possible; dead code
+    Const(Value),
+    Exact(ClassId),
+    // No inheritance, otherwise we would also need an Inexact
+    Top, // Unknown; could be anything
 }
 
-impl TypeSet {
-    pub fn empty() -> TypeSet {
-        TypeSet {
-            types: std::collections::HashSet::new(),
-        }
+impl Type {
+    pub fn empty() -> Type {
+        Type::Bottom
     }
 
-    pub fn single(ty: ClassId) -> TypeSet {
-        TypeSet {
-            types: std::collections::HashSet::from([ty]),
-        }
-    }
-
-    pub fn union(self: &Self, other: &TypeSet) -> TypeSet {
-        TypeSet {
-            types: self.types.union(&other.types).map(|ty| *ty).collect(),
-        }
-    }
-
-    pub fn intersection(self: &Self, other: &TypeSet) -> TypeSet {
-        TypeSet {
-            types: self
-                .types
-                .intersection(&other.types)
-                .map(|ty| *ty)
-                .collect(),
+    pub fn union(self: &Self, other: &Type) -> Type {
+        use Type::*;
+        match (self, other) {
+            (Bottom, _) => other.clone(),
+            (Top, _) => Top,
+            (_, _) if self == other => self.clone(),
+            (Const(Value::Int(_)), Const(Value::Int(_))) => Exact(INT_TYPE),
+            (Const(Value::Str(_)), Const(Value::Str(_))) => Exact(STR_TYPE),
+            (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
+            (_, _) => Top,
         }
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Value {
     Nil,
     Int(i64),
     Str(String),
-    Name(String),
     Fun(FunId),
-    Object(Class), // TODO: ClassId
+    Class(ClassId),
 }
 
 impl std::fmt::Display for Value {
@@ -86,9 +80,8 @@ impl std::fmt::Display for Value {
             Value::Nil => write!(f, "Nil"),
             Value::Int(val) => write!(f, "{val}"),
             Value::Str(val) => write!(f, "{val:?}"),
-            Value::Name(val) => write!(f, "{val}"),
-            Value::Object(_) => write!(f, "<Object>"),
-            Value::Fun(id) => write!(f, "<fun {}>", id.0),
+            Value::Class(id) => write!(f, "Class:{}", id.0),
+            Value::Fun(id) => write!(f, "Fun:{}", id.0),
         }
     }
 }
@@ -232,14 +225,14 @@ impl Block {
 }
 
 #[derive(Debug)]
-pub struct Function {
+pub struct ManagedFunction {
     entrypoint: BlockId,
 
     // Permanent home of every instruction; grows without bound
     insns: Vec<Insn>,
 
     // Type of each insn; index by InsnId just like insns
-    insn_types: Vec<TypeSet>,
+    insn_types: Vec<Type>,
 
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
@@ -253,10 +246,10 @@ pub struct Function {
     //callers
 }
 
-impl Function {
-    pub fn new() -> Function {
+impl ManagedFunction {
+    pub fn new() -> ManagedFunction {
         let entry = Block::empty();
-        Function {
+        ManagedFunction {
             entrypoint: BlockId(0),
             insns: vec![],
             insn_types: vec![],
@@ -287,8 +280,32 @@ impl Function {
     }
 }
 
+#[derive(Debug)]
+pub struct NativeFunction(String);
+
+impl std::fmt::Display for NativeFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug)]
+pub enum Function {
+    Managed(ManagedFunction),
+    Native(NativeFunction),
+}
+
+impl std::fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Function::Managed(fun) => write!(f, "{}", fun),
+            Function::Native(fun) => write!(f, "Native:{}", fun),
+        }
+    }
+}
+
 struct DisplayBlock<'a> {
-    function: &'a Function,
+    function: &'a ManagedFunction,
     block: &'a Block,
     indent: usize,
 }
@@ -305,7 +322,7 @@ impl<'a> std::fmt::Display for DisplayBlock<'a> {
     }
 }
 
-impl std::fmt::Display for Function {
+impl std::fmt::Display for ManagedFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (idx, block) in self.blocks.iter().enumerate() {
             let display_block = DisplayBlock {
@@ -320,7 +337,7 @@ impl std::fmt::Display for Function {
 }
 
 fn sample_function() -> Function {
-    let mut result = Function::new();
+    let mut result = ManagedFunction::new();
     let add = result.push(
         result.entrypoint,
         Insn::FixnumAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
@@ -340,7 +357,7 @@ fn sample_function() -> Function {
         Insn::Return(Opnd::Const(Value::Str("hello".into()))),
     );
     result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
-    result
+    Function::Managed(result)
 }
 
 #[cfg(test)]
@@ -359,7 +376,7 @@ mod tests {
 struct Program {
     // Permanent home of every class; grows without bound
     // Maps ClassId to class objects
-    classes: Vec<Class>,
+    classes: Vec<ClassDesc>,
 
     // Permanent home of every function
     funs: Vec<Function>,
@@ -372,9 +389,15 @@ impl Program {
     // TODO: pre-register types for things like Nil, Integer, etc?
 
     // Register a class
-    pub fn reg_class(&mut self, ty: Class) -> ClassId {
+    pub fn reg_class(&mut self, ty: ClassDesc) -> ClassId {
         let result = ClassId(self.classes.len());
         self.classes.push(ty);
+        result
+    }
+
+    pub fn reg_native_fun(&mut self, fun: NativeFunction) -> FunId {
+        let result = FunId(self.funs.len());
+        self.funs.push(Function::Native(fun));
         result
     }
 }
@@ -406,7 +429,25 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
     todo!();
 }
 
+static INT_TYPE: ClassId = ClassId(0);
+static STR_TYPE: ClassId = ClassId(1);
+
 fn main() {
+    let mut program = Program::default();
+    let int_ctor = program.reg_native_fun(NativeFunction("Integer.new".into()));
+    let str_ctor = program.reg_native_fun(NativeFunction("String.new".into()));
+    program.reg_class(ClassDesc {
+        name: "Integer".into(),
+        fields: vec![],
+        methods: HashMap::new(),
+        ctor: int_ctor,
+    });
+    program.reg_class(ClassDesc {
+        name: "String".into(),
+        fields: vec![],
+        methods: HashMap::new(),
+        ctor: str_ctor,
+    });
     let function = sample_function();
     println!("{function}");
 }
