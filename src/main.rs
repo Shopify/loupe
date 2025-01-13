@@ -463,25 +463,43 @@ impl Program {
 }
 
 pub struct LCG {
-    state: u32,
-    a: u32,
-    c: u32,
-    m: u32,
+    state: u64,
+    // Parameters from "Numerical Recipes"
+    a: u64, // multiplier
+    c: u64, // increment
+    m: u64, // modulus (2^64 in this case)
 }
 
 impl LCG {
-    pub fn new(seed: u32) -> Self {
+    pub fn new(seed: u64) -> Self {
         LCG {
             state: seed,
-            a: 1664525,
-            c: 1013904223,
-            m: 2_u32.pow(32), // 2^32
+            a: 6364136223846793005,
+            c: 1442695040888963407,
+            m: u64::MAX, // 2^64 - 1
         }
     }
 
-    pub fn next(&mut self) -> u32 {
-        self.state = (self.a.wrapping_mul(self.state).wrapping_add(self.c)) % self.m;
+    // Avoid using the lower bits as they are less random
+    pub fn next(&mut self) -> u64 {
+        self.state = self.state.wrapping_mul(self.a).wrapping_add(self.c);
         self.state
+    }
+
+    // Get only the most significant 32 bits which are more random
+    pub fn next_u32(&mut self) -> u32 {
+        (self.next() >> 32) as u32
+    }
+
+    // Choose a random index in [0, max[
+    pub fn next_idx(&mut self, max: usize) -> usize {
+        (self.next_u32() as usize) % max
+    }
+
+    // Pick a random element from a slice
+    pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
+        assert!(!slice.is_empty());
+        &slice[self.next_idx(slice.len())]
     }
 }
 
