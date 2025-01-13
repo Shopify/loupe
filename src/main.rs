@@ -43,6 +43,7 @@ pub enum Type {
     Exact(ClassId),
     // TODO(max): Support limited (shallow) type unions because things will often be Integer|nil, etc
     // Either(Type, Type),
+    // This would also help with TrueClass|FalseClass, since there's no bool type in Ruby.
     // No inheritance, otherwise we would also need an Inexact
     Top, // Unknown; could be anything
 }
@@ -62,6 +63,17 @@ impl Type {
             (Const(Value::Str(_)), Const(Value::Str(_))) => Exact(STR_TYPE),
             (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
             (_, _) => Top,
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Bottom => write!(f, "Bottom"),
+            Type::Const(v) => write!(f, "Const[{v}]"),
+            Type::Exact(class_id) => write!(f, "Class@{}", class_id.0),
+            Type::Top => write!(f, "Top"),
         }
     }
 }
@@ -140,8 +152,8 @@ pub enum Insn {
     IvarSet(Opnd, Opnd, Opnd),
     IvarGet(Opnd, Opnd),
     IsInt(Opnd),
-    IntAdd(Opnd, Opnd),
-    IntLt(Opnd, Opnd),
+    Add(Opnd, Opnd),
+    Lt(Opnd, Opnd),
 
     // ?
     //RefineType(Opnd, Type)
@@ -155,12 +167,16 @@ pub enum Insn {
 }
 
 impl Insn {
-    pub fn is_terminator(self) -> bool {
+    pub fn is_terminator(&self) -> bool {
         use Insn::*;
         match self {
             Return(_) | IfTrue(_, _, _) | Jump(_) => true,
             _ => false,
         }
+    }
+
+    pub fn has_output(&self) -> bool {
+        !self.is_terminator()
     }
 }
 
@@ -194,11 +210,11 @@ impl std::fmt::Display for Insn {
             Insn::IsInt(opnd) => {
                 write!(f, "IsInt {opnd}")
             }
-            Insn::IntAdd(left, right) => {
-                write!(f, "IntAdd {left}, {right}")
+            Insn::Add(left, right) => {
+                write!(f, "Add {left}, {right}")
             }
-            Insn::IntLt(left, right) => {
-                write!(f, "IntLt {left}, {right}")
+            Insn::Lt(left, right) => {
+                write!(f, "Lt {left}, {right}")
             }
             Insn::IfTrue(cond, conseq, alt) => {
                 write!(f, "IfTrue {cond} then {conseq} else {alt}")
@@ -260,6 +276,7 @@ impl ManagedFunction {
     pub fn add_insn(&mut self, insn: Insn) -> InsnId {
         let result = InsnId(self.insns.len());
         self.insns.push(insn);
+        self.insn_types.push(Type::Bottom);
         result
     }
 
@@ -277,6 +294,40 @@ impl ManagedFunction {
         let result = self.add_insn(insn);
         self.blocks[block.0].insns.push(result);
         result
+    }
+
+    fn reflow_insn(&self, insn: &Insn) -> Type {
+        use Opnd::*;
+        match insn {
+            Insn::Add(Const(Value::Int(l)), Const(Value::Int(r))) => Type::Const(Value::Int(l + r)),
+            Insn::Add(InsnOut(lid), InsnOut(rid)) => {
+                if self.insn_types[lid.0] == Type::Exact(INT_TYPE)
+                    && self.insn_types[rid.0] == Type::Exact(INT_TYPE)
+                {
+                    Type::Exact(INT_TYPE)
+                } else {
+                    Type::Top
+                }
+            }
+            Insn::Lt(_, _) => Type::Exact(BOOL_TYPE),
+            _ => Type::Top,
+        }
+    }
+
+    pub fn reflow_types(&mut self) {
+        for ty in &mut self.insn_types {
+            *ty = Type::Bottom;
+        }
+        // for block in self.rpo() {
+        //     for insn_id in block.insns {
+        //         let ty = self.reflow_insn(self.insn_at(insn_id));
+        //         self.insn_types[insn_id.0] = ty;
+        //     }
+        // }
+        for (idx, insn) in self.insns.iter().enumerate() {
+            let ty = self.reflow_insn(self.insn_at(InsnId(idx)));
+            self.insn_types[idx] = ty;
+        }
     }
 }
 
@@ -315,8 +366,13 @@ impl<'a> std::fmt::Display for DisplayBlock<'a> {
         let indent = self.indent;
         for insn_id in self.block.insns.iter() {
             let insn = self.function.insn_at(*insn_id);
-            // TODO(max): Figure out how to get `indent' worth of spaces
-            write!(f, "  {insn_id:<indent$} = {insn}\n")?;
+            if insn.has_output() {
+                let ty = self.function.insn_types[insn_id.0].clone();
+                // TODO(max): Figure out how to get `indent' worth of spaces
+                write!(f, "  {insn_id:<indent$}:{ty} = {insn}\n")?;
+            } else {
+                write!(f, "  {insn}\n")?;
+            }
         }
         Ok(())
     }
@@ -336,15 +392,15 @@ impl std::fmt::Display for ManagedFunction {
     }
 }
 
-fn sample_function() -> Function {
+fn sample_function() -> ManagedFunction {
     let mut result = ManagedFunction::new();
     let add = result.push(
         result.entrypoint,
-        Insn::IntAdd(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
+        Insn::Add(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
     );
     let lt = result.push(
         result.entrypoint,
-        Insn::IntLt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
+        Insn::Lt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
     );
     let conseq = result.alloc_block();
     let alt = result.alloc_block();
@@ -357,7 +413,7 @@ fn sample_function() -> Function {
         Insn::Return(Opnd::Const(Value::Str("hello".into()))),
     );
     result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
-    Function::Managed(result)
+    result
 }
 
 #[cfg(test)]
@@ -448,11 +504,13 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
 
 static INT_TYPE: ClassId = ClassId(0);
 static STR_TYPE: ClassId = ClassId(1);
+static BOOL_TYPE: ClassId = ClassId(2);
 
 fn main() {
     let mut program = Program::default();
     let int_ctor = program.reg_native_fun(NativeFunction("Integer.new".into()));
     let str_ctor = program.reg_native_fun(NativeFunction("String.new".into()));
+    let bool_ctor = program.reg_native_fun(NativeFunction("Bool.new".into()));
     program.reg_class(ClassDesc {
         name: "Integer".into(),
         fields: vec![],
@@ -465,6 +523,13 @@ fn main() {
         methods: HashMap::new(),
         ctor: str_ctor,
     });
-    let function = sample_function();
+    program.reg_class(ClassDesc {
+        name: "Bool".into(),
+        fields: vec![],
+        methods: HashMap::new(),
+        ctor: bool_ctor,
+    });
+    let mut function = sample_function();
+    function.reflow_types();
     println!("{function}");
 }
