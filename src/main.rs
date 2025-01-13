@@ -60,8 +60,8 @@ impl Type {
             (Bottom, _) => other.clone(),
             (Top, _) => Top,
             (_, _) if self == other => self.clone(),
-            (Const(Value::Int(_)), Const(Value::Int(_))) => Exact(INT_TYPE),
-            (Const(Value::Str(_)), Const(Value::Str(_))) => Exact(STR_TYPE),
+            (Const(Value::Int(..)), Const(Value::Int(..))) => Exact(INT_TYPE),
+            (Const(Value::Str(..)), Const(Value::Str(..))) => Exact(STR_TYPE),
             (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
             (_, _) => Top,
         }
@@ -174,7 +174,7 @@ impl Insn {
     pub fn is_terminator(&self) -> bool {
         use Insn::*;
         match self {
-            Return(_) | IfTrue(_, _, _) | Jump(_) => true,
+            Return(..) | IfTrue(..) | Jump(..) => true,
             _ => false,
         }
     }
@@ -313,7 +313,7 @@ impl ManagedFunction {
                     Type::Top
                 }
             }
-            Insn::Lt(_, _) => Type::Exact(BOOL_TYPE),
+            Insn::Lt(..) => Type::Exact(BOOL_TYPE),
             _ => Type::Top,
         }
     }
