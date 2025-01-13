@@ -3,7 +3,6 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use rand::prelude::*;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -401,6 +400,29 @@ impl Program {
     }
 }
 
+pub struct LCG {
+    state: u32,
+    a: u32,
+    c: u32,
+    m: u32,
+}
+
+impl LCG {
+    pub fn new(seed: u32) -> Self {
+        LCG {
+            state: seed,
+            a: 1664525,
+            c: 1013904223,
+            m: 2_u32.pow(32), // 2^32
+        }
+    }
+
+    pub fn next(&mut self) -> u32 {
+        self.state = (self.a.wrapping_mul(self.state).wrapping_add(self.c)) % self.m;
+        self.state
+    }
+}
+
 // TODO: we need a function to generate a big graph/program that's going to be
 // a torture test
 //
@@ -410,7 +432,7 @@ impl Program {
 // IIRC the average size of a Ruby method is something like 8 bytecode instructions
 // So we can generate many simple methods/functions
 fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
-    let mut rng = rand::thread_rng();
+    let mut rng = LCG::new(0);
     //println!("Random usize: {}", rng.gen::<usize>());
     //println!("Integer: {}", rng.gen_range(0..10));
 
