@@ -3,8 +3,8 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::{HashMap, BTreeSet};
 use rand::prelude::*;
+use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ClassDesc {
@@ -236,7 +236,6 @@ pub struct ManagedFunction {
 
     // Permanent home of every block; grows without bound
     blocks: Vec<Block>,
-
     // We may need to keep track of callers/successors of instructions
     // to implement an SCCP-like algorithm?
     // We need to be able to "push" type information forward when a type
@@ -415,16 +414,10 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
     //println!("Random usize: {}", rng.gen::<usize>());
     //println!("Integer: {}", rng.gen_range(0..10));
 
-
-
     // TODO: start by generating a large number of random functions.
     // We'll worry about classes after
     //let fun_ids = Vec::new();
-    for i in 0..num_methods {
-    }
-
-
-
+    for i in 0..num_methods {}
 
     todo!();
 }
