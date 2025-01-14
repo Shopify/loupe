@@ -66,8 +66,18 @@ impl std::fmt::Display for Type {
             Type::Const(v) => write!(f, "Const[{v}]"),
             Type::Exact(class_id) => write!(f, "Class@{}", class_id.0),
             Type::Union(class_ids) =>
-                // TODO(max): Assert size >= 2
-                write!(f, "{}", class_ids.into_iter().map(|id| format!("Class@{}", id.0)).collect::<Vec<_>>().join("|")),
+            // TODO(max): Assert size >= 2
+            {
+                write!(
+                    f,
+                    "{}",
+                    class_ids
+                        .into_iter()
+                        .map(|id| format!("Class@{}", id.0))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                )
+            }
             Type::Top => write!(f, "Top"),
         }
     }
@@ -140,7 +150,11 @@ pub enum Insn {
     // Send has an output
     // How do we handle phi nodes, branches following calls?
     // May be simpler if followed by a branch
-    Send { receiver: Opnd, name: Opnd, args: Vec<Opnd> },
+    Send {
+        receiver: Opnd,
+        name: Opnd,
+        args: Vec<Opnd>,
+    },
 
     Return(Opnd),
     NewInstance(Opnd, Vec<Opnd>),
@@ -185,7 +199,11 @@ fn fmt_args(f: &mut std::fmt::Formatter<'_>, args: &Vec<Opnd>) -> std::fmt::Resu
 impl std::fmt::Display for Insn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Insn::Send { receiver, name, args } => {
+            Insn::Send {
+                receiver,
+                name,
+                args,
+            } => {
                 write!(f, "Send {receiver}, {name}")?;
                 fmt_args(f, args)
             }
@@ -295,28 +313,32 @@ impl ManagedFunction {
         match opnd {
             Opnd::Const(v) => Type::Const(v.clone()),
             Opnd::InsnOut(id) => self.insn_types[id.0].clone(),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 
     fn reflow_insn(&self, insn: &Insn) -> Type {
         use Opnd::*;
         match insn {
-            Insn::Add(l, r) => {
-                match (self.type_of(l), self.type_of(r)) {
-                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => Type::Const(Value::Int(lv + rv)),
-                    (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
-                    _ => Type::Top,
+            Insn::Add(l, r) => match (self.type_of(l), self.type_of(r)) {
+                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
+                    Type::Const(Value::Int(lv + rv))
                 }
-            }
-            Insn::Lt(l, r) => {
-                match (self.type_of(l), self.type_of(r)) {
-                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => Type::Exact(TRUE_TYPE),
-                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => Type::Exact(FALSE_TYPE),
-                    (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE])),
-                    _ => Type::Top,
+                (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
+                _ => Type::Top,
+            },
+            Insn::Lt(l, r) => match (self.type_of(l), self.type_of(r)) {
+                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => {
+                    Type::Exact(TRUE_TYPE)
                 }
-            }
+                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
+                    Type::Exact(FALSE_TYPE)
+                }
+                (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => {
+                    Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE]))
+                }
+                _ => Type::Top,
+            },
             _ => Type::Top,
         }
     }
