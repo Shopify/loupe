@@ -591,10 +591,24 @@ impl LCG {
 fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     let mut rng = LCG::new(0);
 
-    // TODO: start by generating a large number of random functions.
-    // We'll worry about classes after
-    //let fun_ids = Vec::new();
-    for i in 0..num_methods {}
+    let mut prog = Program::default();
+
+    //let mut classes = Vec::new();
+
+    for i in 0..num_classes
+    {
+    }
+
+    //let mut fun_ids = Vec::new();
+
+    // TODO: assign the methods to random classes?
+
+    // Generate functions that only call previously defined functions.
+    // This effectively creates a DAG of function calls, which we know
+    // by construction can't have infinite recursion
+    for i in 0..num_methods
+    {
+    }
 
     todo!();
 }
@@ -645,4 +659,11 @@ fn main() {
     let mut function = sample_function();
     function.reflow_types();
     println!("{function}");
+
+
+    // Generate a synthetic program and run the type analysis on it
+    //let prog = gen_torture_test(500, 2000);
+    //prog.run_analysis();
+
+
 }
