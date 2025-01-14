@@ -291,20 +291,32 @@ impl ManagedFunction {
         result
     }
 
+    fn type_of(&self, opnd: &Opnd) -> Type {
+        match opnd {
+            Opnd::Const(v) => Type::Const(v.clone()),
+            Opnd::InsnOut(id) => self.insn_types[id.0].clone(),
+            _ => todo!()
+        }
+    }
+
     fn reflow_insn(&self, insn: &Insn) -> Type {
         use Opnd::*;
         match insn {
-            Insn::Add(Const(Value::Int(l)), Const(Value::Int(r))) => Type::Const(Value::Int(l + r)),
-            Insn::Add(InsnOut(lid), InsnOut(rid)) => {
-                if self.insn_types[lid.0] == Type::Exact(INT_TYPE)
-                    && self.insn_types[rid.0] == Type::Exact(INT_TYPE)
-                {
-                    Type::Exact(INT_TYPE)
-                } else {
-                    Type::Top
+            Insn::Add(l, r) => {
+                match (self.type_of(l), self.type_of(r)) {
+                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => Type::Const(Value::Int(lv + rv)),
+                    (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
+                    _ => Type::Top,
                 }
             }
-            Insn::Lt(..) => Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE])),
+            Insn::Lt(l, r) => {
+                match (self.type_of(l), self.type_of(r)) {
+                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => Type::Exact(TRUE_TYPE),
+                    (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => Type::Exact(FALSE_TYPE),
+                    (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE])),
+                    _ => Type::Top,
+                }
+            }
             _ => Type::Top,
         }
     }
@@ -518,11 +530,11 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     todo!();
 }
 
-static INT_TYPE: ClassId = ClassId(0);
-static STR_TYPE: ClassId = ClassId(1);
-static TRUE_TYPE: ClassId = ClassId(2);
-static FALSE_TYPE: ClassId = ClassId(3);
-static NIL_TYPE: ClassId = ClassId(4);
+const INT_TYPE: ClassId = ClassId(0);
+const STR_TYPE: ClassId = ClassId(1);
+const TRUE_TYPE: ClassId = ClassId(2);
+const FALSE_TYPE: ClassId = ClassId(3);
+const NIL_TYPE: ClassId = ClassId(4);
 
 fn main() {
     let mut program = Program::default();
