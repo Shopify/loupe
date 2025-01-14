@@ -145,6 +145,22 @@ impl std::fmt::Display for BlockId {
 }
 
 #[derive(Debug)]
+pub struct JumpEdge {
+    target: BlockId,
+    opnds: Vec<Opnd>,
+}
+
+impl std::fmt::Display for JumpEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.target)?;
+        for opnd in &self.opnds {
+            write!(f, ", {opnd}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub enum Insn {
     // Send may need to branch to a return block (call continuation)
     // Send has an output
@@ -171,8 +187,8 @@ pub enum Insn {
     // to supply block argumens for each target
     // we may also want to make IfTrue a one-sided branch for simplicity?
     // do we care about having only one final branch at the end of blocks?
-    IfTrue(Opnd, BlockId, BlockId),
-    Jump(BlockId, Vec<Opnd>),
+    IfTrue(Opnd, JumpEdge, JumpEdge),
+    Jump(JumpEdge),
 }
 
 impl Insn {
@@ -232,9 +248,8 @@ impl std::fmt::Display for Insn {
             Insn::IfTrue(cond, conseq, alt) => {
                 write!(f, "IfTrue {cond} then {conseq} else {alt}")
             }
-            Insn::Jump(block_id, args) => {
-                write!(f, "Jump {block_id}")?;
-                fmt_args(f, args)
+            Insn::Jump(edge) => {
+                write!(f, "Jump {edge}")
             }
         }
     }
@@ -393,16 +408,16 @@ impl ManagedFunction {
         match self.terminator_of(block) {
             Insn::Return(_) => (),
             Insn::IfTrue(_, conseq, alt) => {
-                if !visited.contains(conseq) {
-                    self.po_traverse_from(*conseq, result, visited);
+                if !visited.contains(&conseq.target) {
+                    self.po_traverse_from(conseq.target, result, visited);
                 }
-                if !visited.contains(alt) {
-                    self.po_traverse_from(*alt, result, visited);
+                if !visited.contains(&alt.target) {
+                    self.po_traverse_from(alt.target, result, visited);
                 }
             }
-            Insn::Jump(dst, _) => {
-                if !visited.contains(dst) {
-                    self.po_traverse_from(*dst, result, visited);
+            Insn::Jump(edge) => {
+                if !visited.contains(&edge.target) {
+                    self.po_traverse_from(edge.target, result, visited);
                 }
             }
             insn => {
@@ -412,37 +427,43 @@ impl ManagedFunction {
         result.push(block);
     }
 
-    fn outgoing_arg_types(&self, block_id: BlockId) -> Vec<Type> {
-        let terminator_id = self.blocks[block_id.0].insns.last().unwrap();
-        match self.insn_at(*terminator_id) {
-            Insn::Jump(_, args) => args.iter().map(|arg| self.type_of(block_id, arg)).collect(),
-            Insn::IfTrue(_, conseq, alt) => vec![],
-            Insn::Return(_) => vec![],
-            _ => todo!(),
-        }
-    }
-
     fn union_params(left: &Vec<Type>, right: Vec<Type>) -> Vec<Type> {
-        left.iter().zip(right.iter()).map(|(left_ty, right_ty)| left_ty.union(right_ty)).collect()
+        left.iter()
+            .zip(right.iter())
+            .map(|(left_ty, right_ty)| left_ty.union(right_ty))
+            .collect()
     }
 
-    fn block_precedes(&self, before: BlockId, after: BlockId) -> bool {
-        match self.insn_at(*self.blocks[before.0].insns.last().unwrap()) {
-            Insn::Jump(dst, _) => *dst == after,
-            Insn::IfTrue(_, conseq, alt) => *conseq==after || *alt==after,
-            Insn::Return(_) => false,
-            _ => todo!(),
-        }
-    }
-
-    fn preds(&self, block_id: BlockId) -> Vec<BlockId> {
+    fn incoming_edges(&self, dst: BlockId) -> Vec<(BlockId, &JumpEdge)> {
         let mut result = vec![];
-        for (idx, _) in self.blocks.iter().enumerate() {
-            if self.block_precedes(BlockId(idx), block_id) {
-                result.push(BlockId(idx));
+        for (idx, block) in self.blocks.iter().enumerate() {
+            let block_id = BlockId(idx);
+            match self.insn_at(*block.insns.last().unwrap()) {
+                Insn::Jump(edge) => {
+                    if edge.target == dst {
+                        result.push((block_id, edge))
+                    }
+                }
+                Insn::IfTrue(_, conseq, alt) => {
+                    if conseq.target == dst {
+                        result.push((block_id, conseq));
+                    }
+                    if alt.target == dst {
+                        result.push((block_id, alt));
+                    }
+                }
+                Insn::Return(_) => {}
+                _ => todo!(),
             }
         }
         result
+    }
+
+    fn edge_types(&self, block_id: BlockId, edge: &JumpEdge) -> Vec<Type> {
+        edge.opnds
+            .iter()
+            .map(|opnd| self.type_of(block_id, opnd))
+            .collect()
     }
 
     pub fn reflow_types(&mut self) {
@@ -454,8 +475,8 @@ impl ManagedFunction {
         for block_id in self.rpo() {
             // Flow all incoming arguments to the block parameter types
             let mut param_types = vec![Type::Bottom; self.blocks[block_id.0].num_params()];
-            for pred_id in self.preds(block_id) {
-                param_types = Self::union_params(&param_types, self.outgoing_arg_types(pred_id));
+            for (from_id, edge) in self.incoming_edges(block_id) {
+                param_types = Self::union_params(&param_types, self.edge_types(from_id, edge));
             }
             // Flow types through block's instructions
             self.blocks[block_id.0].param_types = param_types;
@@ -553,11 +574,33 @@ fn sample_function() -> ManagedFunction {
     let alt = result.alloc_block();
     let ift = result.push(
         result.entrypoint,
-        Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt),
+        Insn::IfTrue(
+            Opnd::InsnOut(lt),
+            JumpEdge {
+                target: conseq,
+                opnds: vec![],
+            },
+            JumpEdge {
+                target: alt,
+                opnds: vec![],
+            },
+        ),
     );
     let join = result.alloc_block_with_params(1);
-    result.push(conseq, Insn::Jump(join, vec![Opnd::Const(Value::Int(5))]));
-    result.push(alt, Insn::Jump(join, vec![Opnd::Const(Value::Int(6))]));
+    result.push(
+        conseq,
+        Insn::Jump(JumpEdge {
+            target: join,
+            opnds: vec![Opnd::Const(Value::Int(5))],
+        }),
+    );
+    result.push(
+        alt,
+        Insn::Jump(JumpEdge {
+            target: join,
+            opnds: vec![Opnd::Const(Value::Int(6))],
+        }),
+    );
     let add2 = result.push(join, Insn::Add(Opnd::Param(0), Opnd::Const(Value::Int(7))));
     result.push(join, Insn::Return(Opnd::InsnOut(add2)));
     result
