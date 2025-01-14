@@ -26,15 +26,6 @@ pub struct ClassId(usize);
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct FunId(usize);
 
-// TODO: try this optimization later when we have a performance baseline
-/*
-pub enum Type {
-    Empty,
-    Atom(ClassId),
-    Union(set),
-}
-*/
-
 // The type an IR Insn can have.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum Type {
@@ -491,6 +482,11 @@ impl LCG {
         (self.next() >> 32) as u32
     }
 
+    // Generate a random boolean
+    pub fn next_bool(&mut self) -> bool {
+        (self.next() & (1 << 60)) != 0
+    }
+
     // Choose a random index in [0, max[
     pub fn next_idx(&mut self, max: usize) -> usize {
         (self.next_u32() as usize) % max
@@ -511,10 +507,8 @@ impl LCG {
 //
 // IIRC the average size of a Ruby method is something like 8 bytecode instructions
 // So we can generate many simple methods/functions
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> Function {
+fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     let mut rng = LCG::new(0);
-    //println!("Random usize: {}", rng.gen::<usize>());
-    //println!("Integer: {}", rng.gen_range(0..10));
 
     // TODO: start by generating a large number of random functions.
     // We'll worry about classes after
