@@ -144,7 +144,7 @@ pub enum Opnd {
 impl std::fmt::Display for Opnd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Opnd::Const(val) => write!(f, "(Const {val})"),
+            Opnd::Const(val) => write!(f, "Const[{val}]"),
             Opnd::InsnOut(insn_id) => write!(f, "{insn_id}"),
             Opnd::Param(idx) => write!(f, "arg{idx}"),
         }
@@ -168,11 +168,15 @@ pub struct JumpEdge {
 
 impl std::fmt::Display for JumpEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.target)?;
-        for opnd in &self.opnds {
-            write!(f, ", {opnd}")?;
+        write!(f, "{}(", self.target)?;
+        let num_opnds = self.opnds.len();
+        for (idx, opnd) in self.opnds.iter().enumerate() {
+            write!(f, "{opnd}")?;
+            if idx != num_opnds - 1 {
+                write!(f, ", ")?;
+            }
         }
-        Ok(())
+        write!(f, ")")
     }
 }
 
