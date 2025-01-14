@@ -65,6 +65,11 @@ impl Type {
             (Exact(left_class), Exact(right_class)) => {
                 Union(HashSet::from([*left_class, *right_class]))
             }
+            (Union(set), Exact(new)) | (Exact(new), Union(set)) => {
+                let mut result = set.clone();
+                result.insert(*new);
+                Union(result)
+            }
             (_, _) => Top,
         }
     }
