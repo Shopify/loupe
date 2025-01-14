@@ -45,15 +45,26 @@ impl Type {
         Type::Bottom
     }
 
+    pub fn from_value(value: &Value) -> Type {
+        match value {
+            Value::Nil => Type::Exact(NIL_TYPE),
+            Value::Int(..) => Type::Exact(INT_TYPE),
+            Value::Str(..) => Type::Exact(STR_TYPE),
+            _ => todo!(),
+        }
+    }
+
     pub fn union(self: &Self, other: &Type) -> Type {
         use Type::*;
         match (self, other) {
             (Bottom, _) => other.clone(),
             (Top, _) => Top,
             (_, _) if self == other => self.clone(),
-            (Const(Value::Int(..)), Const(Value::Int(..))) => Exact(INT_TYPE),
-            (Const(Value::Str(..)), Const(Value::Str(..))) => Exact(STR_TYPE),
+            (Const(l), Const(r)) => Type::from_value(l).union(&Type::from_value(r)),
             (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
+            (Exact(left_class), Exact(right_class)) => {
+                Union(HashSet::from([*left_class, *right_class]))
+            }
             (_, _) => Top,
         }
     }
@@ -591,7 +602,7 @@ fn sample_function() -> ManagedFunction {
         conseq,
         Insn::Jump(JumpEdge {
             target: join,
-            opnds: vec![Opnd::Const(Value::Int(5))],
+            opnds: vec![Opnd::Const(Value::Str("hello".into()))],
         }),
     );
     result.push(
