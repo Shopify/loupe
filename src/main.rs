@@ -573,6 +573,12 @@ impl LCG {
         (self.next_u32() as usize) % max
     }
 
+    // Returns true with a specific percentage of probability
+    pub fn pct_prob(&mut self, percent: usize) -> bool {
+        let idx = self.next_idx(100);
+        idx < percent
+    }
+
     // Pick a random element from a slice
     pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
         assert!(!slice.is_empty());
@@ -608,6 +614,18 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     // by construction can't have infinite recursion
     for i in 0..num_methods
     {
+        // Leaf function returning a constant
+        let mut fun = ManagedFunction::new();
+        let block = fun.alloc_block();
+        fun.push(
+            block,
+            Insn::Return(Opnd::Const(Value::Int(7)))
+        );
+        fun.push(block, Insn::Return(Opnd::Const(Value::Int(2))));
+
+        // TODO
+        // TODO: we need some way to add/register methods to classes
+        // TODO
     }
 
     todo!();
