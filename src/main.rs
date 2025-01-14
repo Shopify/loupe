@@ -169,12 +169,10 @@ pub struct JumpEdge {
 impl std::fmt::Display for JumpEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.target)?;
-        let num_opnds = self.opnds.len();
-        for (idx, opnd) in self.opnds.iter().enumerate() {
-            write!(f, "{opnd}")?;
-            if idx != num_opnds - 1 {
-                write!(f, ", ")?;
-            }
+        let mut sep = "";
+        for opnd in &self.opnds {
+            write!(f, "{sep}{opnd}")?;
+            sep = ", ";
         }
         write!(f, ")")
     }
@@ -549,14 +547,12 @@ impl std::fmt::Display for ManagedFunction {
                 indent: 2,
             };
             write!(f, "bb {idx} ")?;
-            let num_block_params = block.num_params();
-            if block.param_types.len() > 0 {
+            if block.num_params() > 0 {
                 write!(f, "(")?;
+                let mut sep = "";
                 for (idx, param_type) in block.param_types.iter().enumerate() {
-                    write!(f, "arg{idx}: {param_type}")?;
-                    if idx != num_block_params - 1 {
-                        write!(f, ", ")?;
-                    }
+                    write!(f, "{sep}arg{idx}: {param_type}")?;
+                    sep = ", ";
                 }
                 write!(f, ") ")?;
             }
