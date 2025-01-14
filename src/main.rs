@@ -726,9 +726,7 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 
     //let mut classes = Vec::new();
 
-    for i in 0..num_classes
-    {
-    }
+    for i in 0..num_classes {}
 
     //let mut fun_ids = Vec::new();
 
@@ -737,15 +735,11 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     // Generate functions that only call previously defined functions.
     // This effectively creates a DAG of function calls, which we know
     // by construction can't have infinite recursion
-    for i in 0..num_methods
-    {
+    for i in 0..num_methods {
         // Leaf function returning a constant
         let mut fun = ManagedFunction::new();
         let block = fun.alloc_block();
-        fun.push(
-            block,
-            Insn::Return(Opnd::Const(Value::Int(7)))
-        );
+        fun.push(block, Insn::Return(Opnd::Const(Value::Int(7))));
         fun.push(block, Insn::Return(Opnd::Const(Value::Int(2))));
 
         // TODO
@@ -803,10 +797,7 @@ fn main() {
     function.reflow_types();
     println!("{function}");
 
-
     // Generate a synthetic program and run the type analysis on it
     //let prog = gen_torture_test(500, 2000);
     //prog.run_analysis();
-
-
 }
