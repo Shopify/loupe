@@ -735,13 +735,12 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 
     let mut class_ids = Vec::new();
 
-    for i in 0..num_classes
-    {
+    for i in 0..num_classes {
         let class_id = prog.reg_class(ClassDesc {
             name: format!("class_{i}"),
             fields: vec![],
             methods: HashMap::new(),
-            ctor: FunId(0) /* TODO: need ctor method id? */,
+            ctor: FunId(0), /* TODO: need ctor method id? */
         });
         class_ids.push(class_id);
     }
@@ -815,14 +814,9 @@ fn main() {
     function.reflow_types();
     println!("{function}");
 
-
-
     // TODO: run the analysis
     //
     // Generate a synthetic program and run the type analysis on it
     let prog = gen_torture_test(500, 2000);
     //prog.run_analysis();
-
-
-
 }
