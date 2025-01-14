@@ -135,7 +135,7 @@ impl std::fmt::Display for Opnd {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct BlockId(usize);
 
 impl std::fmt::Display for BlockId {
@@ -343,19 +343,66 @@ impl ManagedFunction {
         }
     }
 
+    fn terminator_of(&self, block: BlockId) -> &Insn {
+        let insn_id = self.blocks[block.0].insns.last().unwrap();
+        &self.insns[insn_id.0]
+    }
+
+    pub fn rpo(&self) -> Vec<BlockId> {
+        self.rpo_from(self.entrypoint)
+    }
+
+    fn rpo_from(&self, block: BlockId) -> Vec<BlockId> {
+        let mut po_traversal = self.po_from(block);
+        po_traversal.reverse();
+        po_traversal
+    }
+
+    fn po_from(&self, block: BlockId) -> Vec<BlockId> {
+        let mut result = vec![];
+        let mut visited = HashSet::new();
+        self.po_traverse_from(block, &mut result, &mut visited);
+        result
+    }
+
+    fn po_traverse_from(
+        &self,
+        block: BlockId,
+        result: &mut Vec<BlockId>,
+        visited: &mut HashSet<BlockId>,
+    ) {
+        visited.insert(block);
+        match self.terminator_of(block) {
+            Insn::Return(_) => (),
+            Insn::IfTrue(_, conseq, alt) => {
+                if !visited.contains(conseq) {
+                    self.po_traverse_from(*conseq, result, visited);
+                }
+                if !visited.contains(alt) {
+                    self.po_traverse_from(*alt, result, visited);
+                }
+            }
+            Insn::Jump(dst) => {
+                if !visited.contains(dst) {
+                    self.po_traverse_from(*dst, result, visited);
+                }
+            }
+            insn => {
+                panic!("Invalid terminator {insn}")
+            }
+        }
+        result.push(block);
+    }
+
     pub fn reflow_types(&mut self) {
         for ty in &mut self.insn_types {
             *ty = Type::Bottom;
         }
-        // for block in self.rpo() {
-        //     for insn_id in block.insns {
-        //         let ty = self.reflow_insn(self.insn_at(insn_id));
-        //         self.insn_types[insn_id.0] = ty;
-        //     }
-        // }
-        for (idx, insn) in self.insns.iter().enumerate() {
-            let ty = self.reflow_insn(self.insn_at(InsnId(idx)));
-            self.insn_types[idx] = ty;
+        for block_id in self.rpo() {
+            for insn_id in &self.blocks[block_id.0].insns {
+                let ty = self.reflow_insn(self.insn_at(*insn_id));
+                self.insn_types[insn_id.0] = ty;
+            }
         }
     }
 }
