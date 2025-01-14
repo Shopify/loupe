@@ -115,7 +115,7 @@ impl std::fmt::Display for InsnId {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opnd {
-    Arg(u32),
+    Param(usize),
 
     // Constant
     Const(Value),
@@ -130,7 +130,7 @@ impl std::fmt::Display for Opnd {
         match self {
             Opnd::Const(val) => write!(f, "(Const {val})"),
             Opnd::InsnOut(insn_id) => write!(f, "{insn_id}"),
-            Opnd::Arg(idx) => write!(f, "arg{idx}"),
+            Opnd::Param(idx) => write!(f, "arg{idx}"),
         }
     }
 }
@@ -172,7 +172,7 @@ pub enum Insn {
     // we may also want to make IfTrue a one-sided branch for simplicity?
     // do we care about having only one final branch at the end of blocks?
     IfTrue(Opnd, BlockId, BlockId),
-    Jump(BlockId),
+    Jump(BlockId, Vec<Opnd>),
 }
 
 impl Insn {
@@ -232,8 +232,9 @@ impl std::fmt::Display for Insn {
             Insn::IfTrue(cond, conseq, alt) => {
                 write!(f, "IfTrue {cond} then {conseq} else {alt}")
             }
-            Insn::Jump(block_id) => {
-                write!(f, "Jump {block_id}")
+            Insn::Jump(block_id, args) => {
+                write!(f, "Jump {block_id}")?;
+                fmt_args(f, args)
             }
         }
     }
@@ -241,16 +242,27 @@ impl std::fmt::Display for Insn {
 
 #[derive(Debug)]
 pub struct Block {
-    params: Vec<Opnd>,
+    param_types: Vec<Type>,
     insns: Vec<InsnId>,
 }
 
 impl Block {
     pub fn empty() -> Block {
         Block {
-            params: vec![],
+            param_types: vec![],
             insns: vec![],
         }
+    }
+
+    pub fn with_params(num_params: usize) -> Block {
+        Block {
+            param_types: vec![Type::Bottom; num_params],
+            insns: vec![],
+        }
+    }
+
+    fn num_params(&self) -> usize {
+        self.param_types.len()
     }
 }
 
@@ -303,31 +315,37 @@ impl ManagedFunction {
         result
     }
 
+    pub fn alloc_block_with_params(&mut self, num_params: usize) -> BlockId {
+        let result = BlockId(self.blocks.len());
+        self.blocks.push(Block::with_params(num_params));
+        result
+    }
+
     pub fn push(&mut self, block: BlockId, insn: Insn) -> InsnId {
         let result = self.add_insn(insn);
         self.blocks[block.0].insns.push(result);
         result
     }
 
-    fn type_of(&self, opnd: &Opnd) -> Type {
+    fn type_of(&self, block_id: BlockId, opnd: &Opnd) -> Type {
         match opnd {
             Opnd::Const(v) => Type::Const(v.clone()),
             Opnd::InsnOut(id) => self.insn_types[id.0].clone(),
-            _ => todo!(),
+            Opnd::Param(idx) => self.blocks[block_id.0].param_types[*idx].clone(),
         }
     }
 
-    fn reflow_insn(&self, insn: &Insn) -> Type {
+    fn reflow_insn(&self, block_id: BlockId, insn: &Insn) -> Type {
         use Opnd::*;
         match insn {
-            Insn::Add(l, r) => match (self.type_of(l), self.type_of(r)) {
+            Insn::Add(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
                 (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
                     Type::Const(Value::Int(lv + rv))
                 }
                 (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
                 _ => Type::Top,
             },
-            Insn::Lt(l, r) => match (self.type_of(l), self.type_of(r)) {
+            Insn::Lt(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
                 (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => {
                     Type::Exact(TRUE_TYPE)
                 }
@@ -382,7 +400,7 @@ impl ManagedFunction {
                     self.po_traverse_from(*alt, result, visited);
                 }
             }
-            Insn::Jump(dst) => {
+            Insn::Jump(dst, _) => {
                 if !visited.contains(dst) {
                     self.po_traverse_from(*dst, result, visited);
                 }
@@ -394,14 +412,55 @@ impl ManagedFunction {
         result.push(block);
     }
 
+    fn outgoing_arg_types(&self, block_id: BlockId) -> Vec<Type> {
+        let terminator_id = self.blocks[block_id.0].insns.last().unwrap();
+        match self.insn_at(*terminator_id) {
+            Insn::Jump(_, args) => args.iter().map(|arg| self.type_of(block_id, arg)).collect(),
+            Insn::IfTrue(_, conseq, alt) => vec![],
+            Insn::Return(_) => vec![],
+            _ => todo!(),
+        }
+    }
+
+    fn union_params(left: &Vec<Type>, right: Vec<Type>) -> Vec<Type> {
+        left.iter().zip(right.iter()).map(|(left_ty, right_ty)| left_ty.union(right_ty)).collect()
+    }
+
+    fn block_precedes(&self, before: BlockId, after: BlockId) -> bool {
+        match self.insn_at(*self.blocks[before.0].insns.last().unwrap()) {
+            Insn::Jump(dst, _) => *dst == after,
+            Insn::IfTrue(_, conseq, alt) => *conseq==after || *alt==after,
+            Insn::Return(_) => false,
+            _ => todo!(),
+        }
+    }
+
+    fn preds(&self, block_id: BlockId) -> Vec<BlockId> {
+        let mut result = vec![];
+        for (idx, _) in self.blocks.iter().enumerate() {
+            if self.block_precedes(BlockId(idx), block_id) {
+                result.push(BlockId(idx));
+            }
+        }
+        result
+    }
+
     pub fn reflow_types(&mut self) {
+        // Reset all instruction types
         for ty in &mut self.insn_types {
             *ty = Type::Bottom;
         }
+        // For each block in reverse post-order
         for block_id in self.rpo() {
+            // Flow all incoming arguments to the block parameter types
+            let mut param_types = vec![Type::Bottom; self.blocks[block_id.0].num_params()];
+            for pred_id in self.preds(block_id) {
+                param_types = Self::union_params(&param_types, self.outgoing_arg_types(pred_id));
+            }
+            // Flow types through block's instructions
+            self.blocks[block_id.0].param_types = param_types;
             for insn_id in &self.blocks[block_id.0].insns {
-                let ty = self.reflow_insn(self.insn_at(*insn_id));
-                self.insn_types[insn_id.0] = ty;
+                self.insn_types[insn_id.0] = self.reflow_insn(block_id, self.insn_at(*insn_id));
             }
         }
     }
@@ -462,7 +521,19 @@ impl std::fmt::Display for ManagedFunction {
                 block: &block,
                 indent: 2,
             };
-            write!(f, "bb {idx} {{\n{display_block}}}\n")?;
+            write!(f, "bb {idx} ")?;
+            let num_block_params = block.num_params();
+            if block.param_types.len() > 0 {
+                write!(f, "(")?;
+                for (idx, param_type) in block.param_types.iter().enumerate() {
+                    write!(f, "arg{idx}: {param_type}")?;
+                    if idx != num_block_params - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ") ")?;
+            }
+            write!(f, "{{\n{display_block}}}\n")?;
         }
         Ok(())
     }
@@ -484,11 +555,11 @@ fn sample_function() -> ManagedFunction {
         result.entrypoint,
         Insn::IfTrue(Opnd::InsnOut(lt), conseq, alt),
     );
-    result.push(
-        conseq,
-        Insn::Return(Opnd::Const(Value::Str("hello".into()))),
-    );
-    result.push(alt, Insn::Return(Opnd::Const(Value::Int(2))));
+    let join = result.alloc_block_with_params(1);
+    result.push(conseq, Insn::Jump(join, vec![Opnd::Const(Value::Int(5))]));
+    result.push(alt, Insn::Jump(join, vec![Opnd::Const(Value::Int(6))]));
+    let add2 = result.push(join, Insn::Add(Opnd::Param(0), Opnd::Const(Value::Int(7))));
+    result.push(join, Insn::Return(Opnd::InsnOut(add2)));
     result
 }
 
