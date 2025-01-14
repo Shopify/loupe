@@ -606,7 +606,7 @@ fn sample_function() -> ManagedFunction {
         }),
     );
     let add2 = result.push(join, Insn::Add(Opnd::Param(0), Opnd::Const(Value::Int(7))));
-    result.push(
+    let abs = result.push(
         join,
         Insn::Send {
             receiver: Opnd::InsnOut(add2),
@@ -614,7 +614,7 @@ fn sample_function() -> ManagedFunction {
             args: vec![],
         },
     );
-    result.push(join, Insn::Return(Opnd::InsnOut(add2)));
+    result.push(join, Insn::Return(Opnd::InsnOut(abs)));
     result
 }
 
