@@ -243,9 +243,7 @@ impl std::fmt::Display for Insn {
                 write!(f, "Send {receiver}, {name}")?;
                 fmt_args(f, args)
             }
-            Insn::Return(opnd) => {
-                write!(f, "Return {opnd}")
-            }
+            Insn::Return(opnd) => write!(f, "Return {opnd}"),
             Insn::NewInstance(cls, args) => {
                 write!(f, "NewInstance {cls}")?;
                 fmt_args(f, args)
@@ -253,24 +251,12 @@ impl std::fmt::Display for Insn {
             Insn::IvarSet(receiver, attr, value) => {
                 write!(f, "IvarSet {receiver}, {attr}, {value}")
             }
-            Insn::IvarGet(receiver, attr) => {
-                write!(f, "IvarGet {receiver}, {attr}")
-            }
-            Insn::IsInt(opnd) => {
-                write!(f, "IsInt {opnd}")
-            }
-            Insn::Add(left, right) => {
-                write!(f, "Add {left}, {right}")
-            }
-            Insn::Lt(left, right) => {
-                write!(f, "Lt {left}, {right}")
-            }
-            Insn::IfTrue(cond, conseq, alt) => {
-                write!(f, "IfTrue {cond} then {conseq} else {alt}")
-            }
-            Insn::Jump(edge) => {
-                write!(f, "Jump {edge}")
-            }
+            Insn::IvarGet(receiver, attr) => write!(f, "IvarGet {receiver}, {attr}"),
+            Insn::IsInt(opnd) => write!(f, "IsInt {opnd}"),
+            Insn::Add(left, right) => write!(f, "Add {left}, {right}"),
+            Insn::Lt(left, right) => write!(f, "Lt {left}, {right}"),
+            Insn::IfTrue(cond, conseq, alt) => write!(f, "IfTrue {cond} then {conseq} else {alt}"),
+            Insn::Jump(edge) => write!(f, "Jump {edge}"),
         }
     }
 }
