@@ -38,6 +38,7 @@ pub enum Type {
     Bottom, // Empty; no values possible; dead code
     Const(Value),
     Exact(ClassId),
+    Fun(Vec<ClassId>, ClassId),
     Union(HashSet<ClassId>),
     // This would also help with TrueClass|FalseClass, since there's no bool type in Ruby.
     // No inheritance, otherwise we would also need an Inexact
@@ -97,6 +98,12 @@ impl std::fmt::Display for Type {
                         .collect::<Vec<_>>()
                         .join("|")
                 )
+            }
+            Type::Fun(args, result) => {
+                for arg in args {
+                    write!(f, "{arg} -> ")?;
+                }
+                write!(f, "{result}")
             }
             Type::Top => write!(f, "Top"),
         }
