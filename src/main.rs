@@ -642,6 +642,12 @@ struct Program {
     main: FunId,
 }
 
+const INT_TYPE: ClassId = ClassId(0);
+const STR_TYPE: ClassId = ClassId(1);
+const TRUE_TYPE: ClassId = ClassId(2);
+const FALSE_TYPE: ClassId = ClassId(3);
+const NIL_TYPE: ClassId = ClassId(4);
+
 impl Program {
     // Register a class
     pub fn reg_class(&mut self, ty: ClassDesc) -> ClassId {
@@ -660,6 +666,46 @@ impl Program {
     // Helper to register a native function
     pub fn reg_native_fun(&mut self, fun: NativeFunction) -> FunId {
         self.reg_fun(Function::Native(fun))
+    }
+
+    pub fn with_basis() -> Program {
+        let mut result = Program::default();
+        let int_ctor = result.reg_native_fun(NativeFunction("Integer.new".into()));
+        let str_ctor = result.reg_native_fun(NativeFunction("String.new".into()));
+        let true_ctor = result.reg_native_fun(NativeFunction("TrueClass.new".into()));
+        let false_ctor = result.reg_native_fun(NativeFunction("FalseClass.new".into()));
+        let nil_ctor = result.reg_native_fun(NativeFunction("NilClass.new".into()));
+        result.reg_class(ClassDesc {
+            name: "Integer".into(),
+            fields: vec![],
+            methods: HashMap::new(),
+            ctor: int_ctor,
+        });
+        result.reg_class(ClassDesc {
+            name: "String".into(),
+            fields: vec![],
+            methods: HashMap::new(),
+            ctor: str_ctor,
+        });
+        result.reg_class(ClassDesc {
+            name: "TrueClass".into(),
+            fields: vec![],
+            methods: HashMap::new(),
+            ctor: true_ctor,
+        });
+        result.reg_class(ClassDesc {
+            name: "FalseClass".into(),
+            fields: vec![],
+            methods: HashMap::new(),
+            ctor: false_ctor,
+        });
+        result.reg_class(ClassDesc {
+            name: "NilClass".into(),
+            fields: vec![],
+            methods: HashMap::new(),
+            ctor: nil_ctor,
+        });
+        result
     }
 }
 
@@ -788,49 +834,8 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     prog
 }
 
-const INT_TYPE: ClassId = ClassId(0);
-const STR_TYPE: ClassId = ClassId(1);
-const TRUE_TYPE: ClassId = ClassId(2);
-const FALSE_TYPE: ClassId = ClassId(3);
-const NIL_TYPE: ClassId = ClassId(4);
-
 fn main() {
-    let mut program = Program::default();
-    let int_ctor = program.reg_native_fun(NativeFunction("Integer.new".into()));
-    let str_ctor = program.reg_native_fun(NativeFunction("String.new".into()));
-    let true_ctor = program.reg_native_fun(NativeFunction("TrueClass.new".into()));
-    let false_ctor = program.reg_native_fun(NativeFunction("FalseClass.new".into()));
-    let nil_ctor = program.reg_native_fun(NativeFunction("NilClass.new".into()));
-    program.reg_class(ClassDesc {
-        name: "Integer".into(),
-        fields: vec![],
-        methods: HashMap::new(),
-        ctor: int_ctor,
-    });
-    program.reg_class(ClassDesc {
-        name: "String".into(),
-        fields: vec![],
-        methods: HashMap::new(),
-        ctor: str_ctor,
-    });
-    program.reg_class(ClassDesc {
-        name: "TrueClass".into(),
-        fields: vec![],
-        methods: HashMap::new(),
-        ctor: true_ctor,
-    });
-    program.reg_class(ClassDesc {
-        name: "FalseClass".into(),
-        fields: vec![],
-        methods: HashMap::new(),
-        ctor: false_ctor,
-    });
-    program.reg_class(ClassDesc {
-        name: "NilClass".into(),
-        fields: vec![],
-        methods: HashMap::new(),
-        ctor: nil_ctor,
-    });
+    let mut program = Program::with_basis();
     let mut function = sample_function();
     function.reflow_types();
     println!("{function}");
