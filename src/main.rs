@@ -778,9 +778,9 @@ impl LCG {
 fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     let mut rng = LCG::new(0);
 
-    let mut prog = Program::default();
+    let mut prog = Program::with_basis();
 
-    let mut class_ids = Vec::new();
+    let mut class_ids: Vec<ClassId> = prog.classes.iter().enumerate().map(|(idx, _)| ClassId(idx)).collect();
 
     // Create a fixed number of classes
     for i in 0..num_classes {
@@ -800,7 +800,7 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
         class_ids.push(prog.reg_class(class));
     }
 
-    let mut fun_ids: Vec<FunId> = Vec::new();
+    let mut fun_ids: Vec<FunId> = prog.funs.iter().enumerate().map(|(idx, _)| FunId(idx)).collect();
 
     // TODO: is there a way to ensure, by construction, that all
     // functions have callers?
