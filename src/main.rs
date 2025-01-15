@@ -80,8 +80,8 @@ impl std::fmt::Display for Type {
             Type::Const(v) => write!(f, "Const[{v}]"),
             Type::Exact(class_id) => write!(f, "Class@{}", class_id.0),
             Type::Union(class_ids) =>
-            // TODO(max): Assert size >= 2
             {
+                assert!(class_ids.len() >= 2);
                 write!(
                     f,
                     "{}",
