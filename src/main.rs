@@ -161,12 +161,12 @@ impl std::fmt::Display for BlockId {
 }
 
 #[derive(Debug)]
-pub struct JumpEdge {
+pub struct BranchEdge {
     target: BlockId,
     opnds: Vec<Opnd>,
 }
 
-impl std::fmt::Display for JumpEdge {
+impl std::fmt::Display for BranchEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.target)?;
         let mut sep = "";
@@ -206,8 +206,8 @@ pub enum Insn {
     // do we care about having only one final branch at the end of blocks?
     //
     // Each branch edge takes a number of block argument value
-    IfTrue(Opnd, JumpEdge, JumpEdge),
-    Jump(JumpEdge),
+    IfTrue(Opnd, BranchEdge, BranchEdge),
+    Jump(BranchEdge),
 }
 
 impl Insn {
@@ -439,7 +439,7 @@ impl ManagedFunction {
             .collect()
     }
 
-    fn incoming_edges(&self, dst: BlockId) -> Vec<(BlockId, &JumpEdge)> {
+    fn incoming_edges(&self, dst: BlockId) -> Vec<(BlockId, &BranchEdge)> {
         let mut result = vec![];
         for (idx, block) in self.blocks.iter().enumerate() {
             let block_id = BlockId(idx);
@@ -464,7 +464,7 @@ impl ManagedFunction {
         result
     }
 
-    fn edge_types(&self, block_id: BlockId, edge: &JumpEdge) -> Vec<Type> {
+    fn edge_types(&self, block_id: BlockId, edge: &BranchEdge) -> Vec<Type> {
         edge.opnds
             .iter()
             .map(|opnd| self.type_of(block_id, opnd))
@@ -579,11 +579,11 @@ fn sample_function() -> ManagedFunction {
         result.entrypoint,
         Insn::IfTrue(
             Opnd::InsnOut(lt),
-            JumpEdge {
+            BranchEdge {
                 target: conseq,
                 opnds: vec![],
             },
-            JumpEdge {
+            BranchEdge {
                 target: alt,
                 opnds: vec![],
             },
@@ -592,14 +592,14 @@ fn sample_function() -> ManagedFunction {
     let join = result.new_block_with_params(1);
     result.push(
         conseq,
-        Insn::Jump(JumpEdge {
+        Insn::Jump(BranchEdge {
             target: join,
             opnds: vec![Opnd::Const(Value::Str("hello".into()))],
         }),
     );
     result.push(
         alt,
-        Insn::Jump(JumpEdge {
+        Insn::Jump(BranchEdge {
             target: join,
             opnds: vec![Opnd::Const(Value::Int(6))],
         }),
