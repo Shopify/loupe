@@ -702,6 +702,12 @@ impl LCG {
         (self.next_u32() as usize) % max
     }
 
+    // Uniformly distributed u32 in [min, max[
+    pub fn rand_uint(&mut self, min: u32, max: u32) -> u32 {
+        assert!(max > min);
+        min + self.next_u32() % (max - min)
+    }
+
     // Returns true with a specific percentage of probability
     pub fn pct_prob(&mut self, percent: usize) -> bool {
         let idx = self.next_idx(100);
@@ -732,15 +738,20 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 
     // Create a fixed number of classes
     for i in 0..num_classes {
-        let class_id = prog.reg_class(ClassDesc {
+        let mut class = ClassDesc {
             name: format!("class_{i}"),
             fields: vec![],
             methods: HashMap::new(),
             ctor: FunId(0), /* TODO: need ctor method id? */
-        });
-        class_ids.push(class_id);
+        };
 
-        // TODO: create N random fields for each class
+        // Generate random instance variables
+        let num_ivars = rng.rand_uint(1, 10);
+        for i in 0..num_ivars {
+            class.fields.push(format!("v_{i}"));
+        }
+
+        class_ids.push(prog.reg_class(class));
     }
 
     let mut fun_ids: Vec<FunId> = Vec::new();
