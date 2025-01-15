@@ -797,6 +797,12 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
             class.fields.push(format!("v_{i}"));
         }
 
+        // TODO: create random getter/setter functions?
+        // Maybe give all classes the same name/number of methods?
+        // Or directly access the ivars to start?
+
+        // TODO: create a ctor function for this class?
+
         class_ids.push(prog.reg_class(class));
     }
 
