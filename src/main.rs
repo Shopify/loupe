@@ -764,8 +764,8 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
         };
         fun.push(block, Insn::Return(Opnd::Const(cst_val)));
 
-        // TODO: need some way to assign function ids
-        // Functions live on the program object, like classes?
+        // Assign the function an id
+        fun_ids.push(prog.reg_fun(Function::Managed(fun)))
 
         // TODO: we need some way to add/register methods to classes
         // TODO: assign the methods to random classes?
