@@ -329,13 +329,13 @@ impl ManagedFunction {
         &self.insns[insn_id.0]
     }
 
-    pub fn alloc_block(&mut self) -> BlockId {
+    pub fn new_block(&mut self) -> BlockId {
         let result = BlockId(self.blocks.len());
         self.blocks.push(Block::empty());
         result
     }
 
-    pub fn alloc_block_with_params(&mut self, num_params: usize) -> BlockId {
+    pub fn new_block_with_params(&mut self, num_params: usize) -> BlockId {
         let result = BlockId(self.blocks.len());
         self.blocks.push(Block::with_params(num_params));
         result
@@ -573,8 +573,8 @@ fn sample_function() -> ManagedFunction {
         result.entrypoint,
         Insn::Lt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
     );
-    let conseq = result.alloc_block();
-    let alt = result.alloc_block();
+    let conseq = result.new_block();
+    let alt = result.new_block();
     let ift = result.push(
         result.entrypoint,
         Insn::IfTrue(
@@ -589,7 +589,7 @@ fn sample_function() -> ManagedFunction {
             },
         ),
     );
-    let join = result.alloc_block_with_params(1);
+    let join = result.new_block_with_params(1);
     result.push(
         conseq,
         Insn::Jump(JumpEdge {
@@ -750,7 +750,7 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
     for i in 0..num_methods {
         // Leaf function returning a constant
         let mut fun = ManagedFunction::new();
-        let block = fun.alloc_block();
+        let block = fun.new_block();
 
         // Return a random int or nil constant
         let cst_val = if rng.next_bool() {
