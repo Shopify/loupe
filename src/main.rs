@@ -22,6 +22,12 @@ pub struct ClassDesc {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct ClassId(usize);
 
+impl std::fmt::Display for ClassId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Class@{}", self.0)
+    }
+}
+
 // Function id
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct FunId(usize);
@@ -78,7 +84,7 @@ impl std::fmt::Display for Type {
         match self {
             Type::Bottom => write!(f, "Bottom"),
             Type::Const(v) => write!(f, "Const[{v}]"),
-            Type::Exact(class_id) => write!(f, "Class@{}", class_id.0),
+            Type::Exact(class_id) => write!(f, "{class_id}"),
             Type::Union(class_ids) =>
             {
                 assert!(class_ids.len() >= 2);
