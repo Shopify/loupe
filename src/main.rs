@@ -506,11 +506,14 @@ impl ManagedFunction {
 }
 
 #[derive(Debug)]
-pub struct NativeFunction(String);
+pub struct NativeFunction {
+    name: String,
+    signature: Type,
+}
 
 impl std::fmt::Display for NativeFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.name)
     }
 }
 
@@ -683,15 +686,16 @@ impl Program {
 
     pub fn with_basis() -> Program {
         let mut result = Program::default();
-        let int_ctor = result.reg_native_fun(NativeFunction("Integer.new".into()));
-        let str_ctor = result.reg_native_fun(NativeFunction("String.new".into()));
-        let true_ctor = result.reg_native_fun(NativeFunction("TrueClass.new".into()));
-        let false_ctor = result.reg_native_fun(NativeFunction("FalseClass.new".into()));
-        let nil_ctor = result.reg_native_fun(NativeFunction("NilClass.new".into()));
+        let int_ctor = result.reg_native_fun(NativeFunction { name: "Integer.new".into(), signature: Type::Fun(vec![], INT_TYPE)});
+        let str_ctor = result.reg_native_fun(NativeFunction { name: "String.new".into(), signature: Type::Fun(vec![], STR_TYPE)});
+        let true_ctor = result.reg_native_fun(NativeFunction { name: "TrueClass.new".into(), signature: Type::Fun(vec![], TRUE_TYPE)});
+        let false_ctor = result.reg_native_fun(NativeFunction { name: "FalseClass.new".into(), signature: Type::Fun(vec![], FALSE_TYPE)});
+        let nil_ctor = result.reg_native_fun(NativeFunction { name: "NilClass.new".into(), signature: Type::Fun(vec![], NIL_TYPE)});
+        let int_abs = result.reg_native_fun(NativeFunction { name: "Integer.abs".into(), signature: Type::Fun(vec![INT_TYPE], INT_TYPE)});
         result.reg_class(ClassDesc {
             name: "Integer".into(),
             fields: vec![],
-            methods: HashMap::new(),
+            methods: HashMap::from([("abs".into(), int_abs)]),
             ctor: int_ctor,
         });
         result.reg_class(ClassDesc {
