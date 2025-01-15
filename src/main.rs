@@ -32,8 +32,6 @@ pub enum Type {
     Bottom, // Empty; no values possible; dead code
     Const(Value),
     Exact(ClassId),
-    // TODO(max): Support limited (shallow) type unions because things will often be Integer|nil, etc
-    // Either(Type, Type),
     Union(HashSet<ClassId>),
     // This would also help with TrueClass|FalseClass, since there's no bool type in Ruby.
     // No inheritance, otherwise we would also need an Inexact
@@ -203,10 +201,11 @@ pub enum Insn {
     // ?
     //RefineType(Opnd, Type)
 
-    // Maxime says: for branches we're going to need
-    // to supply block argumens for each target
-    // we may also want to make IfTrue a one-sided branch for simplicity?
+    // Maxime says:
+    // we may want to make IfTrue a one-sided branch for simplicity?
     // do we care about having only one final branch at the end of blocks?
+    //
+    // Each branch edge takes a number of block argument value
     IfTrue(Opnd, JumpEdge, JumpEdge),
     Jump(JumpEdge),
 }
@@ -727,6 +726,7 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 
     let mut class_ids = Vec::new();
 
+    // Create a fixed number of classes
     for i in 0..num_classes {
         let class_id = prog.reg_class(ClassDesc {
             name: format!("class_{i}"),
@@ -735,9 +735,14 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
             ctor: FunId(0), /* TODO: need ctor method id? */
         });
         class_ids.push(class_id);
+
+        // TODO: create N random fields for each class
     }
 
-    //let mut fun_ids = Vec::new();
+    let mut fun_ids: Vec<FunId> = Vec::new();
+
+    // TODO: is there a way to ensure, by construction, that all
+    // functions have callers?
 
     // Generate functions that only call previously defined functions.
     // This effectively creates a DAG of function calls, which we know
@@ -746,8 +751,14 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
         // Leaf function returning a constant
         let mut fun = ManagedFunction::new();
         let block = fun.alloc_block();
-        fun.push(block, Insn::Return(Opnd::Const(Value::Int(7))));
-        fun.push(block, Insn::Return(Opnd::Const(Value::Int(2))));
+
+        // Return a random int or nil constant
+        let cst_val = if rng.next_bool() {
+            Value::Int(rng.next_idx(9000) as i64)
+        } else {
+            Value::Nil
+        };
+        fun.push(block, Insn::Return(Opnd::Const(cst_val)));
 
         // TODO: need some way to assign function ids
         // Functions live on the program object, like classes?
@@ -755,6 +766,9 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
         // TODO: we need some way to add/register methods to classes
         // TODO: assign the methods to random classes?
     }
+
+    // TODO: make main the last/topmost function
+    prog.main = FunId(0);
 
     prog
 }
@@ -806,9 +820,10 @@ fn main() {
     function.reflow_types();
     println!("{function}");
 
-    // TODO: run the analysis
+    // TODO: run the fixed point analysis
     //
     // Generate a synthetic program and run the type analysis on it
+    // We'll start with a smaller program size while doing initial testing
     let prog = gen_torture_test(500, 2000);
     //prog.run_analysis();
 }
