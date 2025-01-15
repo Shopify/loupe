@@ -643,8 +643,6 @@ struct Program {
 }
 
 impl Program {
-    // TODO: pre-register types for things like Nil, Integer, etc?
-
     // Register a class
     pub fn reg_class(&mut self, ty: ClassDesc) -> ClassId {
         let result = ClassId(self.classes.len());
@@ -652,10 +650,16 @@ impl Program {
         result
     }
 
-    pub fn reg_native_fun(&mut self, fun: NativeFunction) -> FunId {
+    // Register a function
+    pub fn reg_fun(&mut self, fun: Function) -> FunId {
         let result = FunId(self.funs.len());
-        self.funs.push(Function::Native(fun));
+        self.funs.push(fun);
         result
+    }
+
+    // Helper to register a native function
+    pub fn reg_native_fun(&mut self, fun: NativeFunction) -> FunId {
+        self.reg_fun(Function::Native(fun))
     }
 }
 
