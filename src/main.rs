@@ -115,7 +115,6 @@ pub enum Value {
     Nil,
     Int(i64),
     Str(String),
-    Symbol(String),
     Fun(FunId),
     Class(ClassId),
 }
@@ -126,7 +125,6 @@ impl std::fmt::Display for Value {
             Value::Nil => write!(f, "Nil"),
             Value::Int(val) => write!(f, "{val}"),
             Value::Str(val) => write!(f, "{val:?}"),
-            Value::Symbol(val) => write!(f, ":{val}"),
             Value::Class(id) => write!(f, "Class:{}", id.0),
             Value::Fun(id) => write!(f, "Fun:{}", id.0),
         }
@@ -625,7 +623,7 @@ fn sample_function() -> ManagedFunction {
         join,
         Insn::Send {
             receiver: Opnd::InsnOut(add2),
-            name: Opnd::Const(Value::Symbol("abs".into())),
+            name: Opnd::Const(Value::Str("abs".into())),
             args: vec![],
         },
     );
