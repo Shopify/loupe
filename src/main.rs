@@ -5,6 +5,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+// Wait until we have interprocedural analysis working before introducing classes
+/*
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ClassDesc {
     name: String,
@@ -15,8 +17,9 @@ pub struct ClassDesc {
     // List of methods
     methods: HashMap<String, FunId>,
 
+    // Ignore for now
     // Constructor method
-    ctor: FunId,
+    //ctor: FunId,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -27,123 +30,79 @@ impl std::fmt::Display for ClassId {
         write!(f, "Class@{}", self.0)
     }
 }
+*/
 
-// Function id
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct FunId(usize);
+pub type FunId = usize;
+pub type BlockId = usize;
+pub type InsnId = usize;
 
-// The type an IR Insn can have.
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub enum Type {
-    Bottom, // Empty; no values possible; dead code
-    Const(Value),
-    Exact(ClassId),
-    Fun(Vec<ClassId>, ClassId),
-    Union(HashSet<ClassId>),
-    // This would also help with TrueClass|FalseClass, since there's no bool type in Ruby.
-    // No inheritance, otherwise we would also need an Inexact
-    Top, // Unknown; could be anything
+// Type: Int, Nil, Class
+#[derive(Debug)]
+enum Type
+{
+    Bottom,
+    Top,
 }
 
-impl Type {
-    pub fn empty() -> Type {
-        Type::Bottom
-    }
+// Home of our interprocedural CFG
+#[derive(Default, Debug)]
+struct Program
+{
+    funs: Vec<Function>,
 
-    pub fn from_value(value: &Value) -> Type {
-        match value {
-            Value::Nil => Type::Exact(NIL_TYPE),
-            Value::Int(..) => Type::Exact(INT_TYPE),
-            Value::Str(..) => Type::Exact(STR_TYPE),
-            _ => todo!(),
-        }
-    }
+    blocks: Vec<Block>,
 
-    pub fn union(self: &Self, other: &Type) -> Type {
-        use Type::*;
-        match (self, other) {
-            (Bottom, _) => other.clone(),
-            (Top, _) => Top,
-            (_, _) if self == other => self.clone(),
-            (Const(l), Const(r)) => Type::from_value(l).union(&Type::from_value(r)),
-            (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
-            (Exact(left_class), Exact(right_class)) => {
-                Union(HashSet::from([*left_class, *right_class]))
-            }
-            (Union(set), Exact(new)) | (Exact(new), Union(set)) => {
-                let mut result = set.clone();
-                result.insert(*new);
-                Union(result)
-            }
-            (_, _) => Top,
-        }
-    }
+    insns: Vec<Insn>,
+
+    // Main/entry function
+    main: FunId,
 }
 
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Bottom => write!(f, "Bottom"),
-            Type::Const(v) => write!(f, "Const[{v}]"),
-            Type::Exact(class_id) => write!(f, "{class_id}"),
-            Type::Union(class_ids) =>
-            {
-                assert!(class_ids.len() >= 2);
-                write!(
-                    f,
-                    "{}",
-                    class_ids
-                        .into_iter()
-                        .map(|id| format!("Class@{}", id.0))
-                        .collect::<Vec<_>>()
-                        .join("|")
-                )
-            }
-            Type::Fun(args, result) => {
-                for arg in args {
-                    write!(f, "{arg} -> ")?;
-                }
-                write!(f, "{result}")
-            }
-            Type::Top => write!(f, "Top"),
-        }
-    }
+#[derive(Debug)]
+struct Function
+{
+    entry_block: BlockId,
+
+    // These are the blocks this function can return to
+    // If we add a block to this, we need to update propagation from return block(s)
+    cont_blocks: Vec<BlockId>,
+
+    // We don't need an explicit list of blocks
+}
+
+#[derive(Default, Debug)]
+struct Block
+{
+    // Indicates that this block has been marked as reachable/executable
+    reachable: bool,
+
+    // Do we need to keep the phi nodes separate?
+
+    insns: Vec<Insn>,
+}
+
+#[derive(Debug)]
+struct Insn
+{
+    op: InsnOp,
+
+    // Output type of this instruction
+    t: Type,
+
+    // TODO:
+    // List of uses/successors, needed for SCCP
+    uses: Vec<InsnId>
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Value {
     Nil,
     Int(i64),
-    Str(String),
     Fun(FunId),
-    Class(ClassId),
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Nil => write!(f, "Nil"),
-            Value::Int(val) => write!(f, "{val}"),
-            Value::Str(val) => write!(f, "{val:?}"),
-            Value::Class(id) => write!(f, "Class:{}", id.0),
-            Value::Fun(id) => write!(f, "Fun:{}", id.0),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct InsnId(usize);
-
-impl std::fmt::Display for InsnId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}", self.0)
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Opnd {
-    Param(usize),
-
     // Constant
     Const(Value),
 
@@ -152,717 +111,89 @@ pub enum Opnd {
     InsnOut(InsnId),
 }
 
-impl std::fmt::Display for Opnd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Opnd::Const(val) => write!(f, "Const[{val}]"),
-            Opnd::InsnOut(insn_id) => write!(f, "{insn_id}"),
-            Opnd::Param(idx) => write!(f, "arg{idx}"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct BlockId(usize);
-
-impl std::fmt::Display for BlockId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "bb{}", self.0)
-    }
-}
-
 #[derive(Debug)]
-pub struct BranchEdge {
-    target: BlockId,
-    opnds: Vec<Opnd>,
+enum InsnOp
+{
+    Phi { ins: Vec<(BlockId, Opnd)> },
+    Add { v0: Opnd, v1: Opnd },
+
+    // Start with a direct send (no dynamic lookup)
+    // to get the basics of the analysis working
+    SendDirect { target: FunId },
+
+    // Continuation blocks are the blocks we can return to
+    Return { val: Opnd },
+
+    // Wait until we have basic interprocedural analysis working
+    //GetIvar,
+    //SetIvar,
+
+    IfTrue { val: Opnd, then_block: BlockId, else_block: BlockId  },
+    Jump { target: BlockId }
 }
 
-impl std::fmt::Display for BranchEdge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.target)?;
-        let mut sep = "";
-        for opnd in &self.opnds {
-            write!(f, "{sep}{opnd}")?;
-            sep = ", ";
-        }
-        write!(f, ")")
-    }
-}
 
-#[derive(Debug)]
-pub enum Insn {
-    // Send may need to branch to a return block (call continuation)
-    // Send has an output
-    // How do we handle phi nodes, branches following calls?
-    // May be simpler if followed by a branch
-    Send {
-        receiver: Opnd,
-        name: Opnd,
-        args: Vec<Opnd>,
-    },
 
-    Return(Opnd),
-    NewInstance(Opnd, Vec<Opnd>),
-    IvarSet(Opnd, Opnd, Opnd),
-    IvarGet(Opnd, Opnd),
-    IsInt(Opnd),
-    Add(Opnd, Opnd),
-    Lt(Opnd, Opnd),
 
-    // ?
-    //RefineType(Opnd, Type)
-
-    // Maxime says:
-    // we may want to make IfTrue a one-sided branch for simplicity?
-    // do we care about having only one final branch at the end of blocks?
-    //
-    // Each branch edge takes a number of block argument value
-    IfTrue(Opnd, BranchEdge, BranchEdge),
-    Jump(BranchEdge),
-}
-
-impl Insn {
-    pub fn is_terminator(&self) -> bool {
-        use Insn::*;
-        match self {
-            Return(..) | IfTrue(..) | Jump(..) => true,
-            _ => false,
-        }
+// Sparse conditionall type propagation
+fn sctp()
+{
+    enum ListItem
+    {
+        Insn(InsnId),
+        Block(BlockId),
     }
 
-    pub fn has_output(&self) -> bool {
-        !self.is_terminator()
-    }
-}
+    // Work list of instructions or blocks
+    let mut worklist: Vec<ListItem> = Vec::new();
 
-fn fmt_args(f: &mut std::fmt::Formatter<'_>, args: &Vec<Opnd>) -> std::fmt::Result {
-    for arg in args {
-        write!(f, ", {arg}")?;
-    }
-    Ok(())
-}
+    // While the work list is not empty
+    while worklist.len() > 0
+    {
+        let item = worklist.pop().unwrap();
 
-impl std::fmt::Display for Insn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Insn::Send {
-                receiver,
-                name,
-                args,
-            } => {
-                write!(f, "Send {receiver}, {name}")?;
-                fmt_args(f, args)
+        match item {
+            ListItem::Block(id) => {
+                // - Evaluate block's condition (if any) using current lattice values
+                // - Update outgoing edges' executable status
+                // - If any edge status changed, add destination blocks to worklist
+
+
+
             }
-            Insn::Return(opnd) => write!(f, "Return {opnd}"),
-            Insn::NewInstance(cls, args) => {
-                write!(f, "NewInstance {cls}")?;
-                fmt_args(f, args)
-            }
-            Insn::IvarSet(receiver, attr, value) => {
-                write!(f, "IvarSet {receiver}, {attr}, {value}")
-            }
-            Insn::IvarGet(receiver, attr) => write!(f, "IvarGet {receiver}, {attr}"),
-            Insn::IsInt(opnd) => write!(f, "IsInt {opnd}"),
-            Insn::Add(left, right) => write!(f, "Add {left}, {right}"),
-            Insn::Lt(left, right) => write!(f, "Lt {left}, {right}"),
-            Insn::IfTrue(cond, conseq, alt) => write!(f, "IfTrue {cond} then {conseq} else {alt}"),
-            Insn::Jump(edge) => write!(f, "Jump {edge}"),
-        }
-    }
-}
 
-#[derive(Debug)]
-pub struct Block {
-    param_types: Vec<Type>,
-    insns: Vec<InsnId>,
-}
+            ListItem::Insn(id) => {
+                // - Evaluate RHS using current lattice values
+                // - Compute new lattice value for LHS
+                // - If LHS value changed:
+                //  * Update variable's lattice value
+                //  * Add all uses of variable to worklist
+                //  * Add blocks containing uses to worklist
 
-impl Block {
-    pub fn empty() -> Block {
-        Block {
-            param_types: vec![],
-            insns: vec![],
-        }
-    }
 
-    pub fn with_params(num_params: usize) -> Block {
-        Block {
-            param_types: vec![Type::Bottom; num_params],
-            insns: vec![],
-        }
-    }
 
-    fn num_params(&self) -> usize {
-        self.param_types.len()
-    }
-}
 
-#[derive(Debug)]
-pub struct ManagedFunction {
-    entrypoint: BlockId,
-
-    // Permanent home of every instruction; grows without bound
-    insns: Vec<Insn>,
-
-    // Type of each insn; index by InsnId just like insns
-    insn_types: Vec<Type>,
-
-    // Permanent home of every block; grows without bound
-    blocks: Vec<Block>,
-    // We may need to keep track of callers/successors of instructions
-    // to implement an SCCP-like algorithm?
-    // We need to be able to "push" type information forward when a type
-    // changes
-
-    // List of caller instructions
-    //callers
-}
-
-impl ManagedFunction {
-    pub fn new() -> ManagedFunction {
-        let entry = Block::empty();
-        ManagedFunction {
-            entrypoint: BlockId(0),
-            insns: vec![],
-            insn_types: vec![],
-            blocks: vec![entry],
-        }
-    }
-
-    pub fn add_insn(&mut self, insn: Insn) -> InsnId {
-        let result = InsnId(self.insns.len());
-        self.insns.push(insn);
-        self.insn_types.push(Type::Bottom);
-        result
-    }
-
-    pub fn insn_at(&self, insn_id: InsnId) -> &Insn {
-        &self.insns[insn_id.0]
-    }
-
-    pub fn new_block(&mut self) -> BlockId {
-        let result = BlockId(self.blocks.len());
-        self.blocks.push(Block::empty());
-        result
-    }
-
-    pub fn new_block_with_params(&mut self, num_params: usize) -> BlockId {
-        let result = BlockId(self.blocks.len());
-        self.blocks.push(Block::with_params(num_params));
-        result
-    }
-
-    pub fn push(&mut self, block: BlockId, insn: Insn) -> InsnId {
-        let result = self.add_insn(insn);
-        self.blocks[block.0].insns.push(result);
-        result
-    }
-
-    fn type_of(&self, block_id: BlockId, opnd: &Opnd) -> Type {
-        match opnd {
-            Opnd::Const(v) => Type::Const(v.clone()),
-            Opnd::InsnOut(id) => self.insn_types[id.0].clone(),
-            Opnd::Param(idx) => self.blocks[block_id.0].param_types[*idx].clone(),
-        }
-    }
-
-    fn reflow_insn(&self, block_id: BlockId, insn: &Insn) -> Type {
-        match insn {
-            Insn::Add(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
-                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
-                    Type::Const(Value::Int(lv + rv))
-                }
-                (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
-                _ => Type::Top,
-            },
-            Insn::Lt(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
-                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => {
-                    Type::Exact(TRUE_TYPE)
-                }
-                (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => {
-                    Type::Exact(FALSE_TYPE)
-                }
-                (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => {
-                    Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE]))
-                }
-                _ => Type::Top,
-            },
-            _ => Type::Top,
-        }
-    }
-
-    fn terminator_of(&self, block: BlockId) -> &Insn {
-        let insn_id = self.blocks[block.0].insns.last().unwrap();
-        &self.insns[insn_id.0]
-    }
-
-    pub fn rpo(&self) -> Vec<BlockId> {
-        self.rpo_from(self.entrypoint)
-    }
-
-    fn rpo_from(&self, block: BlockId) -> Vec<BlockId> {
-        let mut po_traversal = self.po_from(block);
-        po_traversal.reverse();
-        po_traversal
-    }
-
-    fn po_from(&self, block: BlockId) -> Vec<BlockId> {
-        let mut result = vec![];
-        let mut visited = HashSet::new();
-        self.po_traverse_from(block, &mut result, &mut visited);
-        result
-    }
-
-    fn po_traverse_from(
-        &self,
-        block: BlockId,
-        result: &mut Vec<BlockId>,
-        visited: &mut HashSet<BlockId>,
-    ) {
-        visited.insert(block);
-        match self.terminator_of(block) {
-            Insn::Return(_) => (),
-            Insn::IfTrue(_, conseq, alt) => {
-                if !visited.contains(&conseq.target) {
-                    self.po_traverse_from(conseq.target, result, visited);
-                }
-                if !visited.contains(&alt.target) {
-                    self.po_traverse_from(alt.target, result, visited);
-                }
-            }
-            Insn::Jump(edge) => {
-                if !visited.contains(&edge.target) {
-                    self.po_traverse_from(edge.target, result, visited);
-                }
-            }
-            insn => {
-                panic!("Invalid terminator {insn}")
-            }
-        }
-        result.push(block);
-    }
-
-    fn union_params(left: &Vec<Type>, right: Vec<Type>) -> Vec<Type> {
-        left.iter()
-            .zip(right.iter())
-            .map(|(left_ty, right_ty)| left_ty.union(right_ty))
-            .collect()
-    }
-
-    fn incoming_edges(&self, dst: BlockId) -> Vec<(BlockId, &BranchEdge)> {
-        let mut result = vec![];
-        for (idx, block) in self.blocks.iter().enumerate() {
-            let block_id = BlockId(idx);
-            match self.insn_at(*block.insns.last().unwrap()) {
-                Insn::Jump(edge) => {
-                    if edge.target == dst {
-                        result.push((block_id, edge))
-                    }
-                }
-                Insn::IfTrue(_, conseq, alt) => {
-                    if conseq.target == dst {
-                        result.push((block_id, conseq));
-                    }
-                    if alt.target == dst {
-                        result.push((block_id, alt));
-                    }
-                }
-                Insn::Return(_) => {}
-                _ => todo!(),
-            }
-        }
-        result
-    }
-
-    fn edge_types(&self, block_id: BlockId, edge: &BranchEdge) -> Vec<Type> {
-        edge.opnds
-            .iter()
-            .map(|opnd| self.type_of(block_id, opnd))
-            .collect()
-    }
-
-    pub fn reflow_types(&mut self) {
-        // Reset all instruction types
-        for ty in &mut self.insn_types {
-            *ty = Type::Bottom;
-        }
-        // For each block in reverse post-order
-        for block_id in self.rpo() {
-            // Flow all incoming arguments to the block parameter types
-            let mut param_types = vec![Type::Bottom; self.blocks[block_id.0].num_params()];
-            for (from_id, edge) in self.incoming_edges(block_id) {
-                param_types = Self::union_params(&param_types, self.edge_types(from_id, edge));
-            }
-            // Flow types through block's instructions
-            self.blocks[block_id.0].param_types = param_types;
-            for insn_id in &self.blocks[block_id.0].insns {
-                self.insn_types[insn_id.0] = self.reflow_insn(block_id, self.insn_at(*insn_id));
             }
         }
     }
 }
 
-#[derive(Debug)]
-pub struct NativeFunction {
-    name: String,
-    signature: Type,
-}
 
-impl std::fmt::Display for NativeFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
 
-#[derive(Debug)]
-pub enum Function {
-    Managed(ManagedFunction),
-    Native(NativeFunction),
-}
 
-impl std::fmt::Display for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Function::Managed(fun) => write!(f, "{}", fun),
-            Function::Native(fun) => write!(f, "Native:{}", fun),
-        }
-    }
-}
 
-struct DisplayBlock<'a> {
-    function: &'a ManagedFunction,
-    block: &'a Block,
-    indent: usize,
-}
+fn main()
+{
+    // TODO:
+    // 1. Start with intraprocedural analysis
+    // 2. Get interprocedural analysis working with direct send (no classes, no native methods)
+    // 3. Once confident that interprocedural analysis is working, then add classes and objects
 
-impl<'a> std::fmt::Display for DisplayBlock<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let indent = self.indent;
-        for insn_id in self.block.insns.iter() {
-            let insn = self.function.insn_at(*insn_id);
-            if insn.has_output() {
-                let ty = self.function.insn_types[insn_id.0].clone();
-                // TODO(max): Figure out how to get `indent' worth of spaces
-                write!(f, "  {insn_id:<indent$}:{ty} = {insn}\n")?;
-            } else {
-                write!(f, "  {insn}\n")?;
-            }
-        }
-        Ok(())
-    }
-}
 
-impl std::fmt::Display for ManagedFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (idx, block) in self.blocks.iter().enumerate() {
-            let display_block = DisplayBlock {
-                function: self,
-                block: &block,
-                indent: 2,
-            };
-            write!(f, "bb {idx} ")?;
-            if block.num_params() > 0 {
-                write!(f, "(")?;
-                let mut sep = "";
-                for (idx, param_type) in block.param_types.iter().enumerate() {
-                    write!(f, "{sep}arg{idx}: {param_type}")?;
-                    sep = ", ";
-                }
-                write!(f, ") ")?;
-            }
-            write!(f, "{{\n{display_block}}}\n")?;
-        }
-        Ok(())
-    }
-}
 
-fn sample_function() -> ManagedFunction {
-    let mut result = ManagedFunction::new();
-    let add = result.push(
-        result.entrypoint,
-        Insn::Add(Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))),
-    );
-    let lt = result.push(
-        result.entrypoint,
-        Insn::Lt(Opnd::InsnOut(add), Opnd::Const(Value::Int(8))),
-    );
-    let conseq = result.new_block();
-    let alt = result.new_block();
-    let ift = result.push(
-        result.entrypoint,
-        Insn::IfTrue(
-            Opnd::InsnOut(lt),
-            BranchEdge {
-                target: conseq,
-                opnds: vec![],
-            },
-            BranchEdge {
-                target: alt,
-                opnds: vec![],
-            },
-        ),
-    );
-    let join = result.new_block_with_params(1);
-    result.push(
-        conseq,
-        Insn::Jump(BranchEdge {
-            target: join,
-            opnds: vec![Opnd::Const(Value::Str("hello".into()))],
-        }),
-    );
-    result.push(
-        alt,
-        Insn::Jump(BranchEdge {
-            target: join,
-            opnds: vec![Opnd::Const(Value::Int(6))],
-        }),
-    );
-    let add2 = result.push(join, Insn::Add(Opnd::Param(0), Opnd::Const(Value::Int(7))));
-    let abs = result.push(
-        join,
-        Insn::Send {
-            receiver: Opnd::InsnOut(add2),
-            name: Opnd::Const(Value::Str("abs".into())),
-            args: vec![],
-        },
-    );
-    result.push(join, Insn::Return(Opnd::InsnOut(abs)));
-    result
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn it_works() {
-        let fun = sample_function();
-        ()
-    }
-}
 
-// TODO: do we want a struct to represent programs?
-#[derive(Default, Debug)]
-struct Program {
-    // Permanent home of every class; grows without bound
-    // Maps ClassId to class objects
-    classes: Vec<ClassDesc>,
 
-    // Permanent home of every function
-    funs: Vec<Function>,
 
-    // Main/entry function
-    main: FunId,
-}
-
-const INT_TYPE: ClassId = ClassId(0);
-const STR_TYPE: ClassId = ClassId(1);
-const TRUE_TYPE: ClassId = ClassId(2);
-const FALSE_TYPE: ClassId = ClassId(3);
-const NIL_TYPE: ClassId = ClassId(4);
-
-impl Program {
-    // Register a class
-    pub fn reg_class(&mut self, ty: ClassDesc) -> ClassId {
-        let result = ClassId(self.classes.len());
-        self.classes.push(ty);
-        result
-    }
-
-    // Register a function
-    pub fn reg_fun(&mut self, fun: Function) -> FunId {
-        let result = FunId(self.funs.len());
-        self.funs.push(fun);
-        result
-    }
-
-    // Helper to register a native function
-    pub fn reg_native_fun(&mut self, fun: NativeFunction) -> FunId {
-        self.reg_fun(Function::Native(fun))
-    }
-
-    pub fn with_basis() -> Program {
-        let mut result = Program::default();
-        let int_ctor = result.reg_native_fun(NativeFunction { name: "Integer.new".into(), signature: Type::Fun(vec![], INT_TYPE)});
-        let str_ctor = result.reg_native_fun(NativeFunction { name: "String.new".into(), signature: Type::Fun(vec![], STR_TYPE)});
-        let true_ctor = result.reg_native_fun(NativeFunction { name: "TrueClass.new".into(), signature: Type::Fun(vec![], TRUE_TYPE)});
-        let false_ctor = result.reg_native_fun(NativeFunction { name: "FalseClass.new".into(), signature: Type::Fun(vec![], FALSE_TYPE)});
-        let nil_ctor = result.reg_native_fun(NativeFunction { name: "NilClass.new".into(), signature: Type::Fun(vec![], NIL_TYPE)});
-        let int_abs = result.reg_native_fun(NativeFunction { name: "Integer.abs".into(), signature: Type::Fun(vec![INT_TYPE], INT_TYPE)});
-        result.reg_class(ClassDesc {
-            name: "Integer".into(),
-            fields: vec![],
-            methods: HashMap::from([("abs".into(), int_abs)]),
-            ctor: int_ctor,
-        });
-        result.reg_class(ClassDesc {
-            name: "String".into(),
-            fields: vec![],
-            methods: HashMap::new(),
-            ctor: str_ctor,
-        });
-        result.reg_class(ClassDesc {
-            name: "TrueClass".into(),
-            fields: vec![],
-            methods: HashMap::new(),
-            ctor: true_ctor,
-        });
-        result.reg_class(ClassDesc {
-            name: "FalseClass".into(),
-            fields: vec![],
-            methods: HashMap::new(),
-            ctor: false_ctor,
-        });
-        result.reg_class(ClassDesc {
-            name: "NilClass".into(),
-            fields: vec![],
-            methods: HashMap::new(),
-            ctor: nil_ctor,
-        });
-        result
-    }
-}
-
-pub struct LCG {
-    state: u64,
-    // Parameters from "Numerical Recipes"
-    // The modulus m is 2^64
-    a: u64, // multiplier
-    c: u64, // increment
-}
-
-impl LCG {
-    pub fn new(seed: u64) -> Self {
-        LCG {
-            state: seed,
-            a: 6364136223846793005,
-            c: 1442695040888963407,
-        }
-    }
-
-    // Avoid using the lower bits as they are less random
-    pub fn next(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(self.a).wrapping_add(self.c);
-        self.state
-    }
-
-    // Get only the most significant 32 bits which are more random
-    pub fn next_u32(&mut self) -> u32 {
-        (self.next() >> 32) as u32
-    }
-
-    // Generate a random boolean
-    pub fn next_bool(&mut self) -> bool {
-        (self.next() & (1 << 60)) != 0
-    }
-
-    // Choose a random index in [0, max[
-    pub fn next_idx(&mut self, max: usize) -> usize {
-        (self.next_u32() as usize) % max
-    }
-
-    // Uniformly distributed u32 in [min, max[
-    pub fn rand_uint(&mut self, min: u32, max: u32) -> u32 {
-        assert!(max > min);
-        min + self.next_u32() % (max - min)
-    }
-
-    // Returns true with a specific percentage of probability
-    pub fn pct_prob(&mut self, percent: usize) -> bool {
-        let idx = self.next_idx(100);
-        idx < percent
-    }
-
-    // Pick a random element from a slice
-    pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
-        assert!(!slice.is_empty());
-        &slice[self.next_idx(slice.len())]
-    }
-}
-
-// TODO: we need a function to generate a big graph/program that's going to be
-// a torture test
-//
-// Something like 10-20K classes and 20K methods that randomly call each other
-// We want the size of it to approximate the size of our production apps
-//
-// IIRC the average size of a Ruby method is something like 8 bytecode instructions
-// So we can generate many simple methods/functions
-fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
-    let mut rng = LCG::new(0);
-
-    let mut prog = Program::with_basis();
-
-    let mut class_ids: Vec<ClassId> = prog.classes.iter().enumerate().map(|(idx, _)| ClassId(idx)).collect();
-
-    // Create a fixed number of classes
-    for i in 0..num_classes {
-        let mut class = ClassDesc {
-            name: format!("class_{i}"),
-            fields: vec![],
-            methods: HashMap::new(),
-            ctor: FunId(0), /* TODO: need ctor method id? */
-        };
-
-        // Generate random instance variables
-        let num_ivars = rng.rand_uint(1, 10);
-        for i in 0..num_ivars {
-            class.fields.push(format!("v_{i}"));
-        }
-
-        // TODO: create random getter/setter functions?
-        // Maybe give all classes the same name/number of methods?
-        // Or directly access the ivars to start?
-
-        // TODO: create a ctor function for this class?
-
-        class_ids.push(prog.reg_class(class));
-    }
-
-    let mut fun_ids: Vec<FunId> = prog.funs.iter().enumerate().map(|(idx, _)| FunId(idx)).collect();
-
-    // TODO: is there a way to ensure, by construction, that all
-    // functions have callers?
-
-    // Generate functions that only call previously defined functions.
-    // This effectively creates a DAG of function calls, which we know
-    // by construction can't have infinite recursion
-    for i in 0..num_methods {
-        // Leaf function returning a constant
-        let mut fun = ManagedFunction::new();
-        let block = fun.new_block();
-
-        // Return a random int or nil constant
-        let cst_val = if rng.next_bool() {
-            Value::Int(rng.next_idx(9000) as i64)
-        } else {
-            Value::Nil
-        };
-        fun.push(block, Insn::Return(Opnd::Const(cst_val)));
-
-        // Assign the function an id
-        fun_ids.push(prog.reg_fun(Function::Managed(fun)))
-
-        // TODO: we need some way to add/register methods to classes
-        // TODO: assign the methods to random classes?
-    }
-
-    // TODO: make main the last/topmost function
-    prog.main = FunId(0);
-
-    prog
-}
-
-fn main() {
-    let program = Program::with_basis();
-    let mut function = sample_function();
-    function.reflow_types();
-    println!("{function}");
-
-    // TODO: run the fixed point analysis
-    //
-    // Generate a synthetic program and run the type analysis on it
-    // We'll start with a smaller program size while doing initial testing
-    let prog = gen_torture_test(500, 2000);
-    //prog.run_analysis();
 }
