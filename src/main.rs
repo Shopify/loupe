@@ -190,9 +190,6 @@ enum InsnOp
     Jump { target: BlockId }
 }
 
-
-
-
 // Sparse conditionall type propagation
 fn sctp(prog: &mut Program)
 {
@@ -237,9 +234,9 @@ fn sctp(prog: &mut Program)
 }
 
 // TODO: port this to Rust
-fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<(usize, usize)>
+fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<Vec<usize>>
 {
-    let mut edges = Vec::new();
+    let mut callees: Vec<Vec<FunId>> = Vec::new();
 
     // For each node except the root
     // Node 0 is the root node and has no incoming edge
@@ -252,28 +249,33 @@ fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: 
         for i in 0..num_parents {
             // Select a random previous node as the parent
             let p_idx = rng.rand_usize(0, node_idx - 1);
-            edges.push((p_idx, node_idx));
+
+            // Add thos node to the callees of the parent
+            if p_idx >= callees.len() {
+                callees.resize(p_idx + 1, Vec::default());
+            }
+            callees[p_idx].push(node_idx);
         }
     }
 
-    edges
+    callees
 }
 
 fn gen_torture_test(num_funs: usize) -> Program
 {
     let mut rng = LCG::new(1337);
 
-    let edges = random_dag(&mut rng, num_funs, 1, 10);
+    let callees = random_dag(&mut rng, num_funs, 1, 10);
 
     let mut prog = Program::default();
 
     // The first function is the root node of the graph
     prog.main = 0;
 
-
-
     // For each function to be generated
     for fun_id in 0..num_funs {
+        // List of callees for this function
+        let callees = &callees[fun_id];
 
         // TODO: we need a list of callees for each function
 
@@ -281,6 +283,9 @@ fn gen_torture_test(num_funs: usize) -> Program
 
 
 
+        // TODO:
+        //let f_id = prog.reg_fun()
+        //assert!(f_id = fun_id);
     }
 
 
