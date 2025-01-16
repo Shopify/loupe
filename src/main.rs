@@ -4,6 +4,7 @@
 #![allow(unused_mut)]
 
 use std::collections::{HashMap, HashSet};
+use std::cmp::{min, max};
 
 pub struct LCG {
     state: u64,
@@ -43,10 +44,10 @@ impl LCG {
         (self.next_u32() as usize) % max
     }
 
-    // Uniformly distributed u32 in [min, max[
-    pub fn rand_uint(&mut self, min: u32, max: u32) -> u32 {
-        assert!(max > min);
-        min + self.next_u32() % (max - min)
+    // Uniformly distributed usize in [min, max]
+    pub fn rand_usize(&mut self, min: usize, max: usize) -> usize {
+        assert!(max >= min);
+        min + (self.next_u32() as usize) % (1 + max - min)
     }
 
     // Returns true with a specific percentage of probability
@@ -236,35 +237,52 @@ fn sctp(prog: &mut Program)
 }
 
 // TODO: port this to Rust
-fn random_dag(num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<(usize, usize)>
+fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<(usize, usize)>
 {
-    let edges = Vec::new();
+    let mut edges = Vec::new();
 
-    /*
-    // For each node
-    for node_no in 1..num_nodes
+    // For each node except the root
+    // Node 0 is the root node and has no incoming edge
+    for node_idx in 1..num_nodes
     {
-        # Choose random number of parents
-        num_parents = random.randint(min_parents, min(max_parents, node_no))
+        // Choose random number of parents
+        let num_parents = rng.rand_usize(min_parents, min(max_parents, node_idx));
 
-        # Select random parents from previous nodes
-        parents = random.sample(range(node_no), num_parents)
-
-        for parent in parents:
-            edges.append((parent, node_no))
+        // For each parent
+        for i in 0..num_parents {
+            // Select a random previous node as the parent
+            let p_idx = rng.rand_usize(0, node_idx - 1);
+            edges.push((p_idx, node_idx));
+        }
     }
-    */
 
     edges
 }
 
 fn gen_torture_test(num_funs: usize) -> Program
 {
-    let edges = random_dag(num_funs, 1, 10);
+    let mut rng = LCG::new(1337);
+
+    let edges = random_dag(&mut rng, num_funs, 1, 10);
 
     let mut prog = Program::default();
 
-    // TODO
+    // The first function is the root node of the graph
+    prog.main = 0;
+
+
+
+    // For each function to be generated
+    for fun_id in 0..num_funs {
+
+        // TODO: we need a list of callees for each function
+
+
+
+
+
+    }
+
 
 
 
