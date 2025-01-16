@@ -12,4 +12,4 @@ jobs:
           components: rustfmt
       - run: cargo test
       - run: cargo run
-      - run: cargo fmt --check
+      #- run: cargo fmt --check

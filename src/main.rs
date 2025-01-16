@@ -5,6 +5,63 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub struct LCG {
+    state: u64,
+    // Parameters from "Numerical Recipes"
+    // The modulus m is 2^64
+    a: u64, // multiplier
+    c: u64, // increment
+}
+
+impl LCG {
+    pub fn new(seed: u64) -> Self {
+        LCG {
+            state: seed,
+            a: 6364136223846793005,
+            c: 1442695040888963407,
+        }
+    }
+
+    // Avoid using the lower bits as they are less random
+    pub fn next(&mut self) -> u64 {
+        self.state = self.state.wrapping_mul(self.a).wrapping_add(self.c);
+        self.state
+    }
+
+    // Get only the most significant 32 bits which are more random
+    pub fn next_u32(&mut self) -> u32 {
+        (self.next() >> 32) as u32
+    }
+
+    // Generate a random boolean
+    pub fn next_bool(&mut self) -> bool {
+        (self.next() & (1 << 60)) != 0
+    }
+
+    // Choose a random index in [0, max[
+    pub fn next_idx(&mut self, max: usize) -> usize {
+        (self.next_u32() as usize) % max
+    }
+
+    // Uniformly distributed u32 in [min, max[
+    pub fn rand_uint(&mut self, min: u32, max: u32) -> u32 {
+        assert!(max > min);
+        min + self.next_u32() % (max - min)
+    }
+
+    // Returns true with a specific percentage of probability
+    pub fn pct_prob(&mut self, percent: usize) -> bool {
+        let idx = self.next_idx(100);
+        idx < percent
+    }
+
+    // Pick a random element from a slice
+    pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
+        assert!(!slice.is_empty());
+        &slice[self.next_idx(slice.len())]
+    }
+}
+
 // Wait until we have interprocedural analysis working before introducing classes
 /*
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -178,9 +235,32 @@ fn sctp()
     }
 }
 
+// TODO: port this to Rust
+fn random_dag(num_nodes: usize, min_parents: usize, max_parents: usize)
+{
+    /*
+    edges = []
+    for node in range(1, n):
+        # Choose random number of parents
+        num_parents = random.randint(min_parents, min(max_parents, node))
+        # Select random parents from previous nodes
+        parents = random.sample(range(node), num_parents)
+        for parent in parents:
+            edges.append((parent, node))
+    return edges
+    */
+}
+
+fn gen_torture_test(num_funs: usize) -> Program
+{
+    let mut prog = Program::default();
 
 
+    // TODO
 
+
+    prog
+}
 
 fn main()
 {
@@ -193,6 +273,7 @@ fn main()
 
 
 
+    let prog = gen_torture_test(200);
 
 
 
