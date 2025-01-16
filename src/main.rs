@@ -32,9 +32,8 @@ impl std::fmt::Display for ClassId {
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct FunId(usize);
 
-// The type an IR Insn can have.
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub enum Type {
+pub enum TypeSet {
     Bottom, // Empty; no values possible; dead code
     Const(Value),
     Exact(ClassId),
@@ -45,27 +44,14 @@ pub enum Type {
     Top, // Unknown; could be anything
 }
 
-impl Type {
-    pub fn empty() -> Type {
-        Type::Bottom
-    }
-
-    pub fn from_value(value: &Value) -> Type {
-        match value {
-            Value::Nil => Type::Exact(NIL_TYPE),
-            Value::Int(..) => Type::Exact(INT_TYPE),
-            Value::Str(..) => Type::Exact(STR_TYPE),
-            _ => todo!(),
-        }
-    }
-
-    pub fn union(self: &Self, other: &Type) -> Type {
-        use Type::*;
+impl TypeSet {
+    pub fn union(self: &Self, other: &TypeSet) -> TypeSet {
+        use TypeSet::*;
         match (self, other) {
             (Bottom, _) => other.clone(),
             (Top, _) => Top,
             (_, _) if self == other => self.clone(),
-            (Const(l), Const(r)) => Type::from_value(l).union(&Type::from_value(r)),
+            (Const(l), Const(r)) => TypeSet::from_value(l).ty.union(&TypeSet::from_value(r).ty),
             (Exact(left_class), Exact(right_class)) if left_class == right_class => self.clone(),
             (Exact(left_class), Exact(right_class)) => {
                 Union(HashSet::from([*left_class, *right_class]))
@@ -80,13 +66,13 @@ impl Type {
     }
 }
 
-impl std::fmt::Display for Type {
+impl std::fmt::Display for TypeSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Bottom => write!(f, "Bottom"),
-            Type::Const(v) => write!(f, "Const[{v}]"),
-            Type::Exact(class_id) => write!(f, "{class_id}"),
-            Type::Union(class_ids) =>
+            TypeSet::Bottom => write!(f, "Bottom"),
+            TypeSet::Const(v) => write!(f, "Const[{v}]"),
+            TypeSet::Exact(class_id) => write!(f, "{class_id}"),
+            TypeSet::Union(class_ids) =>
             {
                 assert!(class_ids.len() >= 2);
                 write!(
@@ -99,14 +85,47 @@ impl std::fmt::Display for Type {
                         .join("|")
                 )
             }
-            Type::Fun(args, result) => {
+            TypeSet::Fun(args, result) => {
                 for arg in args {
                     write!(f, "{arg} -> ")?;
                 }
                 write!(f, "{result}")
             }
-            Type::Top => write!(f, "Top"),
+            TypeSet::Top => write!(f, "Top"),
         }
+    }
+}
+
+// The type an IR Insn can have.
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct Type {
+    ty: TypeSet,
+    spec: Option<Value>,
+}
+
+impl Type {
+    pub fn bottom() -> Type {
+        Type { ty: TypeSet::Bottom, spec: None }
+    }
+
+    pub fn top() -> Type {
+        Type { ty: TypeSet::Top, spec: None }
+    }
+
+    pub fn from_value(value: &Value) -> Type {
+        match value {
+            Value::Nil => Type { ty: TypeSet::Exact(NIL_TYPE), spec: Some(*value) },
+            Value::Int(..) => Type { ty: TypeSet::Exact(INT_TYPE), spec: Some(*value) },
+            Value::Str(..) => Type { ty: TypeSet::Exact(STR_TYPE), spec: Some(*value) },
+            _ => todo!(),
+        }
+    }
+
+    pub fn union(classes: Vec<ClassId>) -> Type {
+    }
+
+    pub fn fun(args: Vec<ClassId>, result: ClassId) -> Type {
+        return Type { ty: TypeSet::Fun(args, result), spec: None }
     }
 }
 
@@ -287,7 +306,7 @@ impl Block {
 
     pub fn with_params(num_params: usize) -> Block {
         Block {
-            param_types: vec![Type::Bottom; num_params],
+            param_types: vec![Type::bottom(); num_params],
             insns: vec![],
         }
     }
@@ -332,7 +351,7 @@ impl ManagedFunction {
     pub fn add_insn(&mut self, insn: Insn) -> InsnId {
         let result = InsnId(self.insns.len());
         self.insns.push(insn);
-        self.insn_types.push(Type::Bottom);
+        self.insn_types.push(Type::bottom());
         result
     }
 
@@ -373,7 +392,7 @@ impl ManagedFunction {
                     Type::Const(Value::Int(lv + rv))
                 }
                 (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => Type::Exact(INT_TYPE),
-                _ => Type::Top,
+                _ => Type::top(),
             },
             Insn::Lt(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
                 (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => {
@@ -385,9 +404,11 @@ impl ManagedFunction {
                 (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => {
                     Type::Union(HashSet::from([TRUE_TYPE, FALSE_TYPE]))
                 }
-                _ => Type::Top,
+                Insn::Send { receiver, name, args } => match self.type_of(receiver) {
+                }
+                _ => Type::top(),
             },
-            _ => Type::Top,
+            _ => Type::top(),
         }
     }
 
@@ -484,12 +505,12 @@ impl ManagedFunction {
     pub fn reflow_types(&mut self) {
         // Reset all instruction types
         for ty in &mut self.insn_types {
-            *ty = Type::Bottom;
+            *ty = Type::bottom();
         }
         // For each block in reverse post-order
         for block_id in self.rpo() {
             // Flow all incoming arguments to the block parameter types
-            let mut param_types = vec![Type::Bottom; self.blocks[block_id.0].num_params()];
+            let mut param_types = vec![Type::bottom(); self.blocks[block_id.0].num_params()];
             for (from_id, edge) in self.incoming_edges(block_id) {
                 param_types = Self::union_params(&param_types, self.edge_types(from_id, edge));
             }
@@ -683,12 +704,12 @@ impl Program {
 
     pub fn with_basis() -> Program {
         let mut result = Program::default();
-        let int_ctor = result.reg_native_fun(NativeFunction { name: "Integer.new".into(), signature: Type::Fun(vec![], INT_TYPE)});
-        let str_ctor = result.reg_native_fun(NativeFunction { name: "String.new".into(), signature: Type::Fun(vec![], STR_TYPE)});
-        let true_ctor = result.reg_native_fun(NativeFunction { name: "TrueClass.new".into(), signature: Type::Fun(vec![], TRUE_TYPE)});
-        let false_ctor = result.reg_native_fun(NativeFunction { name: "FalseClass.new".into(), signature: Type::Fun(vec![], FALSE_TYPE)});
-        let nil_ctor = result.reg_native_fun(NativeFunction { name: "NilClass.new".into(), signature: Type::Fun(vec![], NIL_TYPE)});
-        let int_abs = result.reg_native_fun(NativeFunction { name: "Integer.abs".into(), signature: Type::Fun(vec![INT_TYPE], INT_TYPE)});
+        let int_ctor = result.reg_native_fun(NativeFunction { name: "Integer.new".into(), signature: Type::fun(vec![], INT_TYPE)});
+        let str_ctor = result.reg_native_fun(NativeFunction { name: "String.new".into(), signature: Type::fun(vec![], STR_TYPE)});
+        let true_ctor = result.reg_native_fun(NativeFunction { name: "TrueClass.new".into(), signature: Type::fun(vec![], TRUE_TYPE)});
+        let false_ctor = result.reg_native_fun(NativeFunction { name: "FalseClass.new".into(), signature: Type::fun(vec![], FALSE_TYPE)});
+        let nil_ctor = result.reg_native_fun(NativeFunction { name: "NilClass.new".into(), signature: Type::fun(vec![], NIL_TYPE)});
+        let int_abs = result.reg_native_fun(NativeFunction { name: "Integer.abs".into(), signature: Type::fun(vec![INT_TYPE], INT_TYPE)});
         result.reg_class(ClassDesc {
             name: "Integer".into(),
             fields: vec![],
