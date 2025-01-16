@@ -193,7 +193,7 @@ enum InsnOp
 
 
 // Sparse conditionall type propagation
-fn sctp()
+fn sctp(prog: &mut Program)
 {
     enum ListItem
     {
@@ -236,27 +236,38 @@ fn sctp()
 }
 
 // TODO: port this to Rust
-fn random_dag(num_nodes: usize, min_parents: usize, max_parents: usize)
+fn random_dag(num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<(usize, usize)>
 {
+    let edges = Vec::new();
+
     /*
-    edges = []
-    for node in range(1, n):
+    // For each node
+    for node_no in 1..num_nodes
+    {
         # Choose random number of parents
-        num_parents = random.randint(min_parents, min(max_parents, node))
+        num_parents = random.randint(min_parents, min(max_parents, node_no))
+
         # Select random parents from previous nodes
-        parents = random.sample(range(node), num_parents)
+        parents = random.sample(range(node_no), num_parents)
+
         for parent in parents:
-            edges.append((parent, node))
-    return edges
+            edges.append((parent, node_no))
+    }
     */
+
+    edges
 }
 
 fn gen_torture_test(num_funs: usize) -> Program
 {
+    let edges = random_dag(num_funs, 1, 10);
+
     let mut prog = Program::default();
 
-
     // TODO
+
+
+
 
 
     prog
@@ -273,8 +284,6 @@ fn main()
 
 
 
-    let prog = gen_torture_test(200);
-
-
-
+    let mut prog = gen_torture_test(200);
+    //sctp(&mut prog);
 }
