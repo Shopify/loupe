@@ -727,9 +727,9 @@ impl Program {
 pub struct LCG {
     state: u64,
     // Parameters from "Numerical Recipes"
+    // The modulus m is 2^64
     a: u64, // multiplier
     c: u64, // increment
-    m: u64, // modulus (2^64 in this case)
 }
 
 impl LCG {
@@ -738,7 +738,6 @@ impl LCG {
             state: seed,
             a: 6364136223846793005,
             c: 1442695040888963407,
-            m: u64::MAX, // 2^64 - 1
         }
     }
 
