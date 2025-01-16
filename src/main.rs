@@ -367,7 +367,6 @@ impl ManagedFunction {
     }
 
     fn reflow_insn(&self, block_id: BlockId, insn: &Insn) -> Type {
-        use Opnd::*;
         match insn {
             Insn::Add(l, r) => match (self.type_of(block_id, l), self.type_of(block_id, r)) {
                 (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
@@ -380,7 +379,7 @@ impl ManagedFunction {
                 (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) if lv < rv => {
                     Type::Exact(TRUE_TYPE)
                 }
-                (Type::Const(Value::Int(lv)), Type::Const(Value::Int(rv))) => {
+                (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => {
                     Type::Exact(FALSE_TYPE)
                 }
                 (Type::Exact(INT_TYPE), Type::Exact(INT_TYPE)) => {
@@ -855,7 +854,7 @@ fn gen_torture_test(num_classes: usize, num_methods: usize) -> Program {
 }
 
 fn main() {
-    let mut program = Program::with_basis();
+    let program = Program::with_basis();
     let mut function = sample_function();
     function.reflow_types();
     println!("{function}");
