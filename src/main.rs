@@ -103,6 +103,7 @@ enum Type
     Empty,
     Const(Value),
     Int,
+    Bool,
     Any,
 }
 
@@ -111,11 +112,16 @@ fn union(left: Type, right: Type) -> Type {
         (Type::Any, x) | (x, Type::Any) => Type::Any,
         (Type::Empty, x) | (x, Type::Empty) => x,
         (l, r) if l == r => l,
+        // Int
         (Type::Int, Type::Const(Value::Int(_))) | (Type::Const(Value::Int(_)), Type::Int) => Type::Int,
         (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => Type::Int,
         (Type::Int, Type::Int) => Type::Int,
-        (Type::Int, Type::Const(_)) | (Type::Const(_), Type::Int) => Type::Any,
-        (Type::Const(_), Type::Const(_)) => Type::Any,
+        // Bool
+        (Type::Bool, Type::Const(Value::Bool(_))) | (Type::Const(Value::Bool(_)), Type::Bool) => Type::Bool,
+        (Type::Const(Value::Bool(_)), Type::Const(Value::Bool(_))) => Type::Bool,
+        (Type::Bool, Type::Bool) => Type::Bool,
+        // Other
+        _ => Type::Any,
     }
 }
 
@@ -531,7 +537,10 @@ mod union_tests {
         assert_eq!(union(Type::Any, Type::Any), Type::Any);
         assert_eq!(union(Type::Any, Type::Int), Type::Any);
         assert_eq!(union(Type::Any, Type::Empty), Type::Any);
+        assert_eq!(union(Type::Any, Type::Int), Type::Any);
+        assert_eq!(union(Type::Any, Type::Bool), Type::Any);
         assert_eq!(union(Type::Any, Type::Const(Value::Int(5))), Type::Any);
+        assert_eq!(union(Type::Any, Type::Const(Value::Bool(true))), Type::Any);
     }
 
     #[test]
@@ -540,14 +549,27 @@ mod union_tests {
         assert_eq!(union(Type::Empty, Type::Int), Type::Int);
         assert_eq!(union(Type::Empty, Type::Empty), Type::Empty);
         assert_eq!(union(Type::Empty, Type::Const(Value::Int(5))), Type::Const(Value::Int(5)));
+        assert_eq!(union(Type::Empty, Type::Int), Type::Int);
+        assert_eq!(union(Type::Empty, Type::Bool), Type::Bool);
+        assert_eq!(union(Type::Empty, Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
     }
 
     #[test]
     fn test_const() {
         assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(3))), Type::Const(Value::Int(3)));
+        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
+        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Bool(true))), Type::Any);
+    }
+
+    #[test]
+    fn test_type() {
         assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(4))), Type::Int);
         assert_eq!(union(Type::Const(Value::Int(3)), Type::Int), Type::Int);
-        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Bool(true))), Type::Any);
+
+        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Const(Value::Bool(false))), Type::Bool);
+        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Bool), Type::Bool);
+
+        assert_eq!(union(Type::Int, Type::Bool), Type::Any);
     }
 }
 
