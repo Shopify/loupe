@@ -180,9 +180,6 @@ struct Function
 #[derive(Default, Debug)]
 struct Block
 {
-    // Indicates that this block has been marked as reachable/executable
-    reachable: bool,
-
     // Do we need to keep the phi nodes separate?
 
     insns: Vec<InsnId>,
