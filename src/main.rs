@@ -267,15 +267,15 @@ fn sctp(prog: &mut Program) -> AnalysisResult
         while let Some(insn_id) = insn_worklist.pop_front() {
             let Insn {op} = &prog.insns[insn_id];
             let old_value = values[insn_id];
-            let value_of = |opnd: Opnd| -> Type {
+            let value_of = |opnd: &Opnd| -> Type {
                 match opnd {
-                    Opnd::Const(v) => Type::Const(v),
-                    Opnd::InsnOut(insn_id) => values[insn_id],
+                    Opnd::Const(v) => Type::Const(*v),
+                    Opnd::InsnOut(insn_id) => values[*insn_id],
                 }
             };
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
-                match value_of(val.clone()) {
+                match value_of(val) {
                     Type::Const(Value::Bool(false)) => block_worklist.push_back(*else_block),
                     Type::Const(Value::Bool(true)) => block_worklist.push_back(*then_block),
                     _ => {
@@ -290,7 +290,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 continue;
             };
             if let Op::Return { val, parent_fun } = op {
-                let arg_value = value_of(val.clone());
+                let arg_value = value_of(val);
                 for caller_insn in &uses[insn_id] {
                     // TODO(max): Only take into account Returns coming from from reachable blocks
                     let old_value = values[*caller_insn].clone();
@@ -305,20 +305,20 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             // Now handle expression-like instructions
             let new_value = match op {
                 Op::Add {v0, v1} => {
-                    match (value_of(v0.clone()), value_of(v1.clone())) {
+                    match (value_of(v0), value_of(v1)) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
                         _ => Type::Any,
                     }
                 }
                 Op::LessThan {v0, v1} => {
-                    match (value_of(v0.clone()), value_of(v1.clone())) {
+                    match (value_of(v0), value_of(v1)) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
                         _ => Type::Any,
                     }
                 }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
-                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd.clone())) } else { acc })
+                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd)) } else { acc })
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
