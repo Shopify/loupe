@@ -289,12 +289,19 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 block_worklist.push_back(*target);
                 continue;
             };
-
             if let Op::Return { val, parent_fun } = op {
-                // TODO
+                let arg_value = value_of(val.clone());
+                for caller_insn in &uses[insn_id] {
+                    // TODO(max): Only take into account Returns coming from from reachable blocks
+                    let old_value = values[*caller_insn].clone();
+                    let new_value = meet(old_value, arg_value);
+                    if new_value != old_value {
+                        values[*caller_insn] = new_value;
+                        insn_worklist.extend(&uses[insn_id]);
+                    }
+                }
                 continue;
             };
-
             // Now handle expression-like instructions
             let new_value = match op {
                 Op::Add {v0, v1} => {
@@ -313,15 +320,10 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Top, |acc, (block_id, opnd)| if executable[*block_id] { meet(acc, value_of(opnd.clone())) } else { acc })
                 }
-
                 Op::SendStatic { target, args } => {
-
-
-
-
+                    block_worklist.push_back(prog.funs[*target].entry_block);
                     Type::Top
                 }
-
                 _ => todo!("op not yet supported {:?}", op),
             };
             if meet(old_value, new_value) != old_value {
@@ -662,5 +664,16 @@ mod sctp_tests {
         let iftrue_id = prog.push_insn(block_id, Op::Jump { target });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[target], true);
+    }
+
+    #[test]
+    fn test_one_return_flows_to_send() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[target_entry], true);
+        assert_eq!(result.insn_type[send_id], Type::Const(Value::Int(5)));
     }
 }
