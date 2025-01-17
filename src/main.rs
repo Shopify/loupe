@@ -561,4 +561,39 @@ mod sctp_tests {
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi_id], Type::Top);
     }
+
+    #[test]
+    fn test_iftrue_top() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Int(1))), (block_id, Opnd::Const(Value::Int(2)))] });
+        let then_block = prog.new_block();
+        let else_block = prog.new_block();
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::InsnOut(phi_id), then_block, else_block });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi_id], Type::Top);
+        assert_eq!(result.block_executable[then_block], true);
+        assert_eq!(result.block_executable[else_block], true);
+    }
+
+    #[test]
+    fn test_iftrue_const_then() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let then_block = prog.new_block();
+        let else_block = prog.new_block();
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Int(1)), then_block, else_block });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[then_block], true);
+        assert_eq!(result.block_executable[else_block], false);
+    }
+
+    #[test]
+    fn test_iftrue_const_else() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let then_block = prog.new_block();
+        let else_block = prog.new_block();
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Int(0)), then_block, else_block });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[then_block], false);
+        assert_eq!(result.block_executable[else_block], true);
+    }
 }
