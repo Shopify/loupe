@@ -98,19 +98,19 @@ pub type InsnId = usize;
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 enum Type
 {
-    // Bottom is the empty set (no info propagated yet)
+    // Empty is the empty set (no info propagated yet or unreachable)
     #[default]
-    Bottom,
+    Empty,
     Const(Value),
-    Top,
+    Any,
 }
 
-fn meet(left: Type, right: Type) -> Type {
+fn union(left: Type, right: Type) -> Type {
     match (left, right) {
-        (Type::Top, x) | (x, Type::Top) => x,
+        (Type::Any, x) | (x, Type::Any) => Type::Any,
+        (Type::Empty, x) | (x, Type::Empty) => x,
         (l, r) if l == r => l,
-        (Type::Bottom, x) | (x, Type::Bottom) => Type::Bottom,
-        (Type::Const(l), Type::Const(r)) => Type::Top,
+        (Type::Const(l), Type::Const(r)) => Type::Any,
     }
 }
 
@@ -252,7 +252,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 
     let num_insns = prog.insns.len();
     let mut values: Vec<Type> = Vec::with_capacity(num_insns);
-    values.resize(num_insns, Type::Top);
+    values.resize(num_insns, Type::Empty);
 
     // Mark entry as executable
     let entry = prog.funs[prog.main].entry_block;
@@ -294,7 +294,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 for caller_insn in &uses[insn_id] {
                     // TODO(max): Only take into account Returns coming from from reachable blocks
                     let old_value = values[*caller_insn].clone();
-                    let new_value = meet(old_value, arg_value);
+                    let new_value = union(old_value, arg_value);
                     if new_value != old_value {
                         values[*caller_insn] = new_value;
                         insn_worklist.extend(&uses[insn_id]);
@@ -307,26 +307,26 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Add {v0, v1} => {
                     match (value_of(v0.clone()), value_of(v1.clone())) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
-                        _ => Type::Top,
+                        _ => Type::Any,
                     }
                 }
                 Op::LessThan {v0, v1} => {
                     match (value_of(v0.clone()), value_of(v1.clone())) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
-                        _ => Type::Top,
+                        _ => Type::Any,
                     }
                 }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
-                    ins.iter().fold(Type::Top, |acc, (block_id, opnd)| if executable[*block_id] { meet(acc, value_of(opnd.clone())) } else { acc })
+                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd.clone())) } else { acc })
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
-                    Type::Top
+                    Type::Empty  // This will get filled in by all Return instructions that could flow to it
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
-            if meet(old_value, new_value) != old_value {
+            if union(old_value, new_value) != old_value {
                 values[insn_id] = new_value;
                 insn_worklist.extend(&uses[insn_id]);
             }
@@ -619,18 +619,18 @@ mod sctp_tests {
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id)), (block_id, Opnd::Const(Value::Int(8)))] });
         let result = sctp(&mut prog);
-        assert_eq!(result.insn_type[phi_id], Type::Top);
+        assert_eq!(result.insn_type[phi_id], Type::Any);
     }
 
     #[test]
-    fn test_iftrue_top() {
+    fn test_iftrue_any() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Int(1))), (block_id, Opnd::Const(Value::Int(2)))] });
         let then_block = prog.new_block();
         let else_block = prog.new_block();
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::InsnOut(phi_id), then_block, else_block });
         let result = sctp(&mut prog);
-        assert_eq!(result.insn_type[phi_id], Type::Top);
+        assert_eq!(result.insn_type[phi_id], Type::Any);
         assert_eq!(result.block_executable[then_block], true);
         assert_eq!(result.block_executable[else_block], true);
     }
