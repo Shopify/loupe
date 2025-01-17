@@ -209,6 +209,7 @@ enum Op
 {
     Phi { ins: Vec<(BlockId, Opnd)> },
     Add { v0: Opnd, v1: Opnd },
+    LessThan { v0: Opnd, v1: Opnd },
 
     // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
@@ -302,6 +303,12 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                         _ => Type::Top,
                     }
                 }
+                Op::LessThan {v0, v1} => {
+                    match (value_of(v0.clone()), value_of(v1.clone())) {
+                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
+                        _ => Type::Top,
+                    }
+                }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Top, |acc, (block_id, opnd)| if executable[*block_id] { meet(acc, value_of(opnd.clone())) } else { acc })
@@ -354,7 +361,7 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
                     mark_use(insn_id, opnd);
                 }
             }
-            Op::Add { v0, v1 } => {
+            Op::Add { v0, v1 } | Op::LessThan { v0, v1 }=> {
                 mark_use(insn_id, v0);
                 mark_use(insn_id, v1);
             }
@@ -555,6 +562,16 @@ mod sctp_tests {
         let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::InsnOut(add0_id), v1: Opnd::Const(Value::Int(5)) });
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[add1_id], Type::Const(Value::Int(12)));
+    }
+
+    #[test]
+    fn test_less_than() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let lt0_id = prog.push_insn(block_id, Op::LessThan { v0: Opnd::Const(Value::Int(7)), v1: Opnd::Const(Value::Int(8)) });
+        let lt1_id = prog.push_insn(block_id, Op::LessThan { v0: Opnd::Const(Value::Int(8)), v1: Opnd::Const(Value::Int(8)) });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[lt0_id], Type::Const(Value::Bool(true)));
+        assert_eq!(result.insn_type[lt1_id], Type::Const(Value::Bool(false)));
     }
 
     #[test]
