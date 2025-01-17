@@ -130,21 +130,25 @@ struct Program
 
 impl Program {
     // Register a function and assign it an id
-    pub fn reg_fun(&mut self, fun: Function) -> FunId {
+    pub fn new_fun(&mut self) -> (FunId, BlockId) {
+        let mut fun = Function::default();
+        let entry_block = self.new_block();
+        fun.entry_block = entry_block;
+
         let id = self.funs.len();
         self.funs.push(fun);
-        id
+        (id, entry_block)
     }
 
     // Register a block and assign it an id
-    pub fn reg_block(&mut self, block: Block) -> BlockId {
+    pub fn new_block(&mut self) -> BlockId {
         let id = self.blocks.len();
-        self.blocks.push(block);
+        self.blocks.push(Block::default());
         id
     }
 
     // Add an instruction to the program
-    pub fn push_insn(&mut self, op: Op) -> InsnId {
+    pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
         let insn = Insn {
             op,
             t: Type::default(),
@@ -153,6 +157,10 @@ impl Program {
 
         let id = self.insns.len();
         self.insns.push(insn);
+
+        // Add the insn to the block
+        self.blocks[block].insns.push(id);
+
         id
     }
 }
@@ -372,7 +380,8 @@ fn gen_torture_test(num_funs: usize) -> Program
 
     // For each function to be generated
     for fun_id in 0..num_funs {
-        let mut fun = Function::default();
+        let (f_id, entry_block) = prog.new_fun();
+        assert!(f_id == fun_id);
 
          // List of callees for this function
         let callees = &callees[fun_id];
@@ -386,12 +395,10 @@ fn gen_torture_test(num_funs: usize) -> Program
                 Value::Int(rng.rand_usize(0, 500) as i64)
             };
 
-            let entry_block = Block::default();
-
-
-
-
-            fun.entry_block = prog.reg_block(entry_block);
+            prog.push_insn(
+                entry_block,
+                Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
+            );
         } else {
 
 
@@ -405,9 +412,6 @@ fn gen_torture_test(num_funs: usize) -> Program
 
 
         }
-
-        let f_id = prog.reg_fun(fun);
-        assert!(f_id == fun_id);
     }
 
     prog
