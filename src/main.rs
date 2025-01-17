@@ -340,6 +340,19 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 }
 
 fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
+    // Map of functions to instructions that called them
+    let num_funs = prog.funs.len();
+    let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
+    called_by.resize(num_funs, HashSet::new());
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        let Insn { op, .. } = insn;
+        match op {
+            Op::SendStatic { target, args } => {
+                called_by[*target].insert(insn_id);
+            }
+            _ => {}
+        }
+    }
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
     let num_insns = prog.insns.len();
@@ -370,8 +383,11 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
                     mark_use(insn_id, opnd);
                 }
             }
-            Op::Return { val, .. } => {
+            Op::Return { val, parent_fun } => {
                 mark_use(insn_id, val);
+                for caller in &called_by[*parent_fun] {
+                    mark_use(*caller, &Opnd::InsnOut(insn_id));
+                }
             }
             Op::IfTrue { val, .. } => {
                 mark_use(insn_id, val);
@@ -518,11 +534,23 @@ mod compute_uses_tests {
     #[test]
     fn test_send() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
-        let send_id = prog.push_insn(block_id, Op::SendStatic { target: 123, args: vec![Opnd::InsnOut(add_id)] });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::InsnOut(add_id)] });
         let uses = compute_uses(&mut prog);
         assert_eq!(uses[add_id], vec![send_id]);
         assert_eq!(uses[send_id], vec![]);
+    }
+
+    #[test]
+    fn test_send_uses_return() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
+        let uses = compute_uses(&mut prog);
+        assert_eq!(uses[send_id], vec![]);
+        assert_eq!(uses[ret_id], vec![send_id]);
     }
 
     #[test]
