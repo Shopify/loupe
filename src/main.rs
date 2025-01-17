@@ -349,6 +349,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::LessThan {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
+                        (l, r) if union(l, r) == Type::Int => Type::Bool,
                         _ => Type::Any,
                     }
                 }
@@ -790,7 +791,12 @@ mod sctp_tests {
         let cond = prog.push_insn(body_id, Op::LessThan { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(100)) });
         prog.push_insn(body_id, Op::IfTrue { val: Opnd::Insn(cond), then_block: body_id, else_block: end_id });
         prog.push_insn(end_id, Op::Return { val: Opnd::Insn(n), parent_fun: fun_id });
-        sctp(&mut prog);
-        // TODO(max): Test types and reachability
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[entry_id], true);
+        assert_eq!(result.block_executable[body_id], true);
+        assert_eq!(result.block_executable[end_id], true);
+        assert_eq!(result.insn_type[n], Type::Int);
+        assert_eq!(result.insn_type[n_inc], Type::Int);
+        assert_eq!(result.insn_type[cond], Type::Bool);
     }
 }
