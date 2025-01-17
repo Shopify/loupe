@@ -166,6 +166,14 @@ impl Program {
 
         id
     }
+
+    fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
+        let mut insn = &mut self.insns[insn_id] ;
+        match insn {
+            Insn { op: Op::Phi { ins } } => ins.push((block_id, opnd)),
+            _ => panic!("Can't append phi arg to non-phi {:?}", insn)
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -719,5 +727,32 @@ mod sctp_tests {
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[target_entry], true);
         assert_eq!(result.insn_type[send_id], Type::Const(Value::Int(5)));
+    }
+
+    #[test]
+    fn test_sum() {
+        /*
+        entry:
+            Jump body
+        body:
+            n = Phi (entry: 0, body: n_inc)
+            n_inc = Add(n, 1)
+            cond = LessThan n, 100
+            IfTrue cond, body, end
+        end:
+            Return n
+        */
+        let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
+        let body_id = prog.new_block();
+        let end_id = prog.new_block();
+        prog.push_insn(entry_id, Op::Jump { target: body_id });
+        let n = prog.push_insn(body_id, Op::Phi { ins: vec![(entry_id, Opnd::Const(Value::Int(0)))] });
+        let n_inc = prog.push_insn(body_id, Op::Add { v0: Opnd::InsnOut(n), v1: Opnd::Const(Value::Int(1)) });
+        prog.add_phi_arg(n, body_id, Opnd::InsnOut(n_inc));
+        let cond = prog.push_insn(body_id, Op::LessThan { v0: Opnd::InsnOut(n), v1: Opnd::Const(Value::Int(100)) });
+        prog.push_insn(body_id, Op::IfTrue { val: Opnd::InsnOut(cond), then_block: body_id, else_block: end_id });
+        prog.push_insn(end_id, Op::Return { val: Opnd::InsnOut(n), parent_fun: fun_id });
+        sctp(&mut prog);
+        // TODO(max): Test types and reachability
     }
 }
