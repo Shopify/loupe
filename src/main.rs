@@ -217,6 +217,14 @@ pub enum Opnd {
     Insn(InsnId),
 }
 
+// Convenient constant operands
+const NIL: Opnd = Opnd::Const(Value::Nil);
+const ZERO: Opnd = Opnd::Const(Value::Int(0));
+const ONE: Opnd = Opnd::Const(Value::Int(1));
+const TWO: Opnd = Opnd::Const(Value::Int(2));
+const FALSE: Opnd = Opnd::Const(Value::Bool(false));
+const TRUE: Opnd = Opnd::Const(Value::Bool(true));
+
 #[derive(Debug)]
 enum Op
 {
@@ -482,7 +490,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 
             prog.push_insn(
                 entry_block,
-                Op::Return { val: Opnd::Const(Value::Nil), parent_fun: fun_id }
+                Op::Return { val: NIL, parent_fun: fun_id }
             );
         }
     }
@@ -669,7 +677,7 @@ mod sctp_tests {
     fn test_phi_different_type() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
-        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, Opnd::Const(Value::Bool(true)))] });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, TRUE)] });
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi_id], Type::Any);
     }
@@ -677,7 +685,7 @@ mod sctp_tests {
     #[test]
     fn test_iftrue_any() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Int(1))), (block_id, Opnd::Const(Value::Int(2)))] });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, ONE), (block_id, TWO)] });
         let then_block = prog.new_block();
         let else_block = prog.new_block();
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(phi_id), then_block, else_block });
@@ -692,7 +700,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let then_block = prog.new_block();
         let else_block = prog.new_block();
-        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Bool(true)), then_block, else_block });
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: TRUE, then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], true);
         assert_eq!(result.block_executable[else_block], false);
@@ -703,7 +711,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let then_block = prog.new_block();
         let else_block = prog.new_block();
-        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Bool(false)), then_block, else_block });
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: FALSE, then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], false);
         assert_eq!(result.block_executable[else_block], true);
@@ -746,8 +754,8 @@ mod sctp_tests {
         let body_id = prog.new_block();
         let end_id = prog.new_block();
         prog.push_insn(entry_id, Op::Jump { target: body_id });
-        let n = prog.push_insn(body_id, Op::Phi { ins: vec![(entry_id, Opnd::Const(Value::Int(0)))] });
-        let n_inc = prog.push_insn(body_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(1)) });
+        let n = prog.push_insn(body_id, Op::Phi { ins: vec![(entry_id, ZERO)] });
+        let n_inc = prog.push_insn(body_id, Op::Add { v0: Opnd::Insn(n), v1: ONE });
         prog.add_phi_arg(n, body_id, Opnd::Insn(n_inc));
         let cond = prog.push_insn(body_id, Op::LessThan { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(100)) });
         prog.push_insn(body_id, Op::IfTrue { val: Opnd::Insn(cond), then_block: body_id, else_block: end_id });
