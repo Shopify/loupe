@@ -425,5 +425,6 @@ fn main()
 
 
     let mut prog = gen_torture_test(200);
+    compute_uses(&mut prog);
     //sctp(&mut prog);
 }
