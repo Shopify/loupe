@@ -448,3 +448,75 @@ fn main()
     compute_uses(&mut prog);
     //sctp(&mut prog);
 }
+
+#[cfg(test)]
+mod compute_uses_tests {
+    use super::*;
+
+    fn prog_with_empty_fun() -> (Program, FunId, BlockId) {
+        let mut prog = Program::default();
+        prog.main = 0;
+        let (fun_id, block_id) = prog.new_fun();
+        (prog, fun_id, block_id)
+    }
+
+    #[test]
+    fn test_compute_uses_return() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::InsnOut(add_id), parent_fun: fun_id });
+        assert_eq!(prog.insns[add_id].uses, vec![]);
+        assert_eq!(prog.insns[ret_id].uses, vec![]);
+        compute_uses(&mut prog);
+        assert_eq!(prog.insns[add_id].uses, vec![ret_id]);
+        assert_eq!(prog.insns[ret_id].uses, vec![]);
+    }
+
+    #[test]
+    fn test_compute_uses_add() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::InsnOut(add0_id), v1: Opnd::InsnOut(add0_id) });
+        assert_eq!(prog.insns[add0_id].uses, vec![]);
+        assert_eq!(prog.insns[add1_id].uses, vec![]);
+        compute_uses(&mut prog);
+        assert_eq!(prog.insns[add0_id].uses, vec![add1_id]);
+        assert_eq!(prog.insns[add1_id].uses, vec![]);
+    }
+
+    #[test]
+    fn test_compute_uses_phi() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id))] });
+        assert_eq!(prog.insns[add_id].uses, vec![]);
+        assert_eq!(prog.insns[phi_id].uses, vec![]);
+        compute_uses(&mut prog);
+        assert_eq!(prog.insns[add_id].uses, vec![phi_id]);
+        assert_eq!(prog.insns[phi_id].uses, vec![]);
+    }
+
+    #[test]
+    fn test_compute_uses_send() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target: 123, args: vec![Opnd::InsnOut(add_id)], ret_block: 123 });
+        assert_eq!(prog.insns[add_id].uses, vec![]);
+        assert_eq!(prog.insns[send_id].uses, vec![]);
+        compute_uses(&mut prog);
+        assert_eq!(prog.insns[add_id].uses, vec![send_id]);
+        assert_eq!(prog.insns[send_id].uses, vec![]);
+    }
+
+    #[test]
+    fn test_compute_uses_iftrue() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::InsnOut(add_id), then_block: 3, else_block: 4 });
+        assert_eq!(prog.insns[add_id].uses, vec![]);
+        assert_eq!(prog.insns[iftrue_id].uses, vec![]);
+        compute_uses(&mut prog);
+        assert_eq!(prog.insns[add_id].uses, vec![iftrue_id]);
+        assert_eq!(prog.insns[iftrue_id].uses, vec![]);
+    }
+}
