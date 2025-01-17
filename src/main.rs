@@ -110,7 +110,7 @@ fn meet(left: Type, right: Type) -> Type {
         (Type::Top, x) | (x, Type::Top) => x,
         (l, r) if l == r => l,
         (Type::Bottom, x) | (x, Type::Bottom) => Type::Bottom,
-        (Type::Const(l), Type::Const(r)) => if l == r { left } else { Type::Bottom }
+        (Type::Const(l), Type::Const(r)) => Type::Top,
     }
 }
 
@@ -294,7 +294,7 @@ fn sctp(prog: &mut Program)
                 Op::Add {v0, v1} => {
                     match (value_of(v0.clone()), value_of(v1.clone())) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
-                        _ => Type::Bottom,
+                        _ => Type::Top,
                     }
                 }
                 Op::Phi { ins } => {
@@ -554,5 +554,25 @@ mod sctp_tests {
         assert_eq!(prog.insns[add1_id].t, Type::Bottom);
         sctp(&mut prog);
         assert_eq!(prog.insns[add1_id].t, Type::Const(Value::Int(12)));
+    }
+
+    #[test]
+    fn test_phi_same_const() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id)), (block_id, Opnd::Const(Value::Int(7)))] });
+        assert_eq!(prog.insns[phi_id].t, Type::Bottom);
+        sctp(&mut prog);
+        assert_eq!(prog.insns[phi_id].t, Type::Const(Value::Int(7)));
+    }
+
+    #[test]
+    fn test_phi_different_const() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id)), (block_id, Opnd::Const(Value::Int(8)))] });
+        assert_eq!(prog.insns[phi_id].t, Type::Bottom);
+        sctp(&mut prog);
+        assert_eq!(prog.insns[phi_id].t, Type::Top);
     }
 }
