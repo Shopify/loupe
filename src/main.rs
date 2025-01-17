@@ -175,12 +175,18 @@ enum InsnOp
     Phi { ins: Vec<(BlockId, Opnd)> },
     Add { v0: Opnd, v1: Opnd },
 
-    // Start with a direct send (no dynamic lookup)
+    // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
-    SendDirect { target: FunId },
+    // ret_block is the block that we return to after the call
+    SendStatic { target: FunId, args: Vec<Opnd>, ret_block: BlockId },
 
-    // Continuation blocks are the blocks we can return to
-    Return { val: Opnd },
+    // TODO: wait until we have the interprocedural analysis working before tackling this
+    // Send with a dynamic name lookup on `self`
+    //Send { target: FunId, self: Opnd, args: Vec<Opnd>, ret_block: BlockId },
+
+    // The caller blocks this function can return to are stored
+    // on the Function object this instruction belongs to
+    Return { val: Opnd, parent_fun: FunId },
 
     // Wait until we have basic interprocedural analysis working
     //GetIvar,
@@ -198,6 +204,8 @@ fn sctp(prog: &mut Program)
         Insn(InsnId),
         Block(BlockId),
     }
+
+    // TODO: split this into two work lists like in the SCCP paper ****
 
     // Work list of instructions or blocks
     let mut worklist: Vec<ListItem> = Vec::new();
