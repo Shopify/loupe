@@ -230,6 +230,7 @@ enum Op
 {
     Phi { ins: Vec<(BlockId, Opnd)> },
     Add { v0: Opnd, v1: Opnd },
+    Mul { v0: Opnd, v1: Opnd },
     LessThan { v0: Opnd, v1: Opnd },
 
     // Start with a static send (no dynamic lookup)
@@ -332,6 +333,13 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                         _ => Type::Any,
                     }
                 }
+                Op::Mul {v0, v1} => {
+                    match (value_of(v0), value_of(v1)) {
+                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l*r)),
+                        (l, r) if union(l, r) == Type::Int => Type::Int,
+                        _ => Type::Any,
+                    }
+                }
                 Op::LessThan {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
@@ -398,7 +406,7 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
                     mark_use(insn_id, opnd);
                 }
             }
-            Op::Add { v0, v1 } | Op::LessThan { v0, v1 }=> {
+            Op::Add { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 }=> {
                 mark_use(insn_id, v0);
                 mark_use(insn_id, v1);
             }
