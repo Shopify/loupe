@@ -66,22 +66,22 @@ impl LCG {
 // Wait until we have interprocedural analysis working before introducing classes
 /*
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct ClassDesc {
+pub struct Class {
     name: String,
 
     // List of fields
     fields: Vec<String>,
 
+    // Types associated with each field
+    field_types: Vec<Type>,
+
     // List of methods
     methods: HashMap<String, FunId>,
 
-    // Ignore for now
+    // KISS, ignore for now
     // Constructor method
     //ctor: FunId,
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct ClassId(usize);
 
 impl std::fmt::Display for ClassId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -95,9 +95,11 @@ pub type BlockId = usize;
 pub type InsnId = usize;
 
 // Type: Int, Nil, Class
-#[derive(Debug)]
+#[derive(Default, Debug)]
 enum Type
 {
+    // Bottom is the empty set (no info propagated yet)
+    #[default]
     Bottom,
     Top,
 }
@@ -116,7 +118,16 @@ struct Program
     main: FunId,
 }
 
-#[derive(Debug)]
+impl Program {
+    // Register a function and assign it an id
+    pub fn reg_fun(&mut self, fun: Function) -> FunId {
+        let id = self.funs.len();
+        self.funs.push(fun);
+        id
+    }
+}
+
+#[derive(Default, Debug)]
 struct Function
 {
     entry_block: BlockId,
@@ -246,6 +257,8 @@ fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: 
 {
     let mut callees: Vec<Vec<FunId>> = Vec::new();
 
+    callees.resize(num_nodes, Vec::default());
+
     // For each node except the root
     // Node 0 is the root node and has no incoming edge
     for node_idx in 1..num_nodes
@@ -257,11 +270,6 @@ fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: 
         for i in 0..num_parents {
             // Select a random previous node as the parent
             let p_idx = rng.rand_usize(0, node_idx - 1);
-
-            // Add thos node to the callees of the parent
-            if p_idx >= callees.len() {
-                callees.resize(p_idx + 1, Vec::default());
-            }
             callees[p_idx].push(node_idx);
         }
     }
@@ -282,24 +290,34 @@ fn gen_torture_test(num_funs: usize) -> Program
 
     // For each function to be generated
     for fun_id in 0..num_funs {
-        // List of callees for this function
+        let mut fun = Function::default();
+
+         // List of callees for this function
         let callees = &callees[fun_id];
 
-        // TODO: we need a list of callees for each function
+        // If this is a leaf method
+        if callees.is_empty() {
+            // Return a constant
+
+
+
+        } else {
+
+
+            for callee_id in callees {
 
 
 
 
+            }
 
-        // TODO:
-        //let f_id = prog.reg_fun()
-        //assert!(f_id = fun_id);
+
+
+        }
+
+        let f_id = prog.reg_fun(fun);
+        assert!(f_id == fun_id);
     }
-
-
-
-
-
 
     prog
 }
