@@ -168,10 +168,6 @@ struct Function
 {
     entry_block: BlockId,
 
-    // These are the blocks this function can return to
-    // If we add a block to this, we need to update propagation from return block(s)
-    cont_blocks: Vec<BlockId>,
-
     // We don't need an explicit list of blocks
 }
 
@@ -183,6 +179,7 @@ struct Block
     insns: Vec<InsnId>,
 }
 
+// Remove this if the only thing we store is op
 #[derive(Debug)]
 struct Insn
 {
@@ -215,12 +212,11 @@ enum Op
 
     // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
-    // ret_block is the block that we return to after the call
-    SendStatic { target: FunId, args: Vec<Opnd>, ret_block: BlockId },
+    SendStatic { target: FunId, args: Vec<Opnd> },
 
     // TODO: wait until we have the interprocedural analysis working before tackling this
     // Send with a dynamic name lookup on `self`
-    //Send { target: FunId, self: Opnd, args: Vec<Opnd>, ret_block: BlockId },
+    //Send { target: FunId, self: Opnd, args: Vec<Opnd> },
 
     // The caller blocks this function can return to are stored
     // on the Function object this instruction belongs to
@@ -292,6 +288,12 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 block_worklist.push_back(*target);
                 continue;
             };
+
+            if let Op::Return { val, parent_fun } = op {
+                // TODO
+                continue;
+            };
+
             // Now handle expression-like instructions
             let new_value = match op {
                 Op::Add {v0, v1} => {
@@ -304,7 +306,16 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Top, |acc, (block_id, opnd)| if executable[*block_id] { meet(acc, value_of(opnd.clone())) } else { acc })
                 }
-                _ => todo!(),
+
+                Op::SendStatic { target, args } => {
+
+
+
+
+                    Type::Top
+                }
+
+                _ => todo!("op not yet supported {:?}", op),
             };
             if meet(old_value, new_value) != old_value {
                 values[insn_id] = new_value;
@@ -422,17 +433,18 @@ fn gen_torture_test(num_funs: usize) -> Program
                 Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
             );
         } else {
-
-
+            // Call the callees and do nothing with the return value for now
             for callee_id in callees {
-
-
-
-
+                prog.push_insn(
+                    entry_block,
+                    Op::SendStatic { target: *callee_id, args: vec![] }
+                );
             }
 
-
-
+            prog.push_insn(
+                entry_block,
+                Op::Return { val: Opnd::Const(Value::Nil), parent_fun: fun_id }
+            );
         }
     }
 
@@ -451,8 +463,8 @@ fn main()
 
 
     let mut prog = gen_torture_test(200);
-    compute_uses(&mut prog);
-    //sctp(&mut prog);
+    //compute_uses(&mut prog);
+    sctp(&mut prog);
 }
 
 #[cfg(test)]
@@ -500,7 +512,7 @@ mod compute_uses_tests {
     fn test_send() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
-        let send_id = prog.push_insn(block_id, Op::SendStatic { target: 123, args: vec![Opnd::InsnOut(add_id)], ret_block: 123 });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target: 123, args: vec![Opnd::InsnOut(add_id)] });
         let uses = compute_uses(&mut prog);
         assert_eq!(uses[add_id], vec![send_id]);
         assert_eq!(uses[send_id], vec![]);
