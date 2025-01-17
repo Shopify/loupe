@@ -597,4 +597,13 @@ mod sctp_tests {
         assert_eq!(result.block_executable[then_block], false);
         assert_eq!(result.block_executable[else_block], true);
     }
+
+    #[test]
+    fn test_jump() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let target = prog.new_block();
+        let iftrue_id = prog.push_insn(block_id, Op::Jump { target });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[target], true);
+    }
 }
