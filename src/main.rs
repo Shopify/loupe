@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::cmp::{min, max};
 
 pub struct LCG {
@@ -95,13 +95,24 @@ pub type BlockId = usize;
 pub type InsnId = usize;
 
 // Type: Int, Nil, Class
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 enum Type
+
 {
     // Bottom is the empty set (no info propagated yet)
     #[default]
     Bottom,
+    Const(Value),
     Top,
+}
+
+fn meet(left: Type, right: Type) -> Type {
+    match (left, right) {
+        (Type::Top, x) | (x, Type::Top) => x,
+        (l, r) if l == r => l,
+        (Type::Bottom, x) | (x, Type::Bottom) => Type::Bottom,
+        (Type::Const(l), Type::Const(r)) => if l == r { left } else { Type::Bottom }
+    }
 }
 
 // Home of our interprocedural CFG
@@ -147,7 +158,7 @@ struct Block
 
     // Do we need to keep the phi nodes separate?
 
-    insns: Vec<Insn>,
+    insns: Vec<InsnId>,
 }
 
 #[derive(Debug)]
@@ -163,7 +174,7 @@ struct Insn
     uses: Vec<InsnId>
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum Value {
     Nil,
     Int(i64),
@@ -210,43 +221,68 @@ enum Op
 // Sparse conditionall type propagation
 fn sctp(prog: &mut Program)
 {
-    enum ListItem
-    {
-        Insn(InsnId),
-        Block(BlockId),
-    }
+    let num_blocks = prog.blocks.len();
+    let mut executable: Vec<bool> = Vec::with_capacity(num_blocks);
+    executable.resize(num_blocks, false);
 
-    // TODO: split this into two work lists like in the SCCP paper ****
+    let num_insns = prog.insns.len();
+    let mut values: Vec<Type> = Vec::with_capacity(num_insns);
+    values.resize(num_insns, Type::Top);
 
     // Work list of instructions or blocks
-    let mut worklist: Vec<ListItem> = Vec::new();
+    let mut block_worklist: VecDeque<BlockId> = VecDeque::new();
+    let mut insn_worklist: VecDeque<InsnId> = VecDeque::new();
 
-    // While the work list is not empty
-    while worklist.len() > 0
+    while block_worklist.len() > 0 || insn_worklist.len() > 0
     {
-        let item = worklist.pop().unwrap();
-
-        match item {
-            ListItem::Block(id) => {
-                // - Evaluate block's condition (if any) using current lattice values
-                // - Update outgoing edges' executable status
-                // - If any edge status changed, add destination blocks to worklist
-
-
-
+        while let Some(insn_id) = insn_worklist.pop_front() {
+            let Insn {op, .. } = &prog.insns[insn_id];
+            let old_value = values[insn_id];
+            let value_of = |opnd: Opnd| -> Type {
+                match opnd {
+                    Opnd::Const(v) => Type::Const(v),
+                    Opnd::InsnOut(insn_id) => values[insn_id],
+                }
+            };
+            // Handle control instructions first; they do not have a value
+            if let Op::IfTrue { val, then_block, else_block } = op {
+                match value_of(val.clone()) {
+                    Type::Const(Value::Int(0)) => block_worklist.push_back(*else_block),
+                    Type::Const(Value::Int(n)) => block_worklist.push_back(*then_block),
+                    _ => {
+                        block_worklist.push_back(*then_block);
+                        block_worklist.push_back(*else_block);
+                    }
+                }
+                continue;
+            };
+            if let Op::Jump { target } = op {
+                block_worklist.push_back(*target);
+                continue;
+            };
+            // Now handle expression-like instructions
+            let new_value = match op {
+                Op::Add {v0, v1} => {
+                    match (value_of(v0.clone()), value_of(v1.clone())) {
+                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
+                        _ => Type::Bottom,
+                    }
+                }
+                Op::Phi { ins } => {
+                    // Only take into account operands coming from from reachable blocks
+                    ins.iter().fold(Type::Top, |acc, (block_id, opnd)| if executable[*block_id] { meet(acc, value_of(opnd.clone())) } else { acc })
+                }
+                _ => todo!(),
+            };
+            if meet(old_value, new_value) != old_value {
+                values[insn_id] = new_value;
+                // TODO(max): Add uses to worklist
             }
-
-            ListItem::Insn(id) => {
-                // - Evaluate RHS using current lattice values
-                // - Compute new lattice value for LHS
-                // - If LHS value changed:
-                //  * Update variable's lattice value
-                //  * Add all uses of variable to worklist
-                //  * Add blocks containing uses to worklist
-
-
-
-
+        }
+        while let Some(block_id) = block_worklist.pop_front() {
+            if !executable[block_id] {
+                executable[block_id] = true;
+                insn_worklist.extend(&prog.blocks[block_id].insns);
             }
         }
     }
