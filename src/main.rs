@@ -330,11 +330,27 @@ fn compute_uses(prog: &mut Program) {
             }
         };
         match op {
+            Op::Phi { ins } => {
+                for (_, opnd) in ins {
+                    mark_use(insn_id, opnd);
+                }
+            }
             Op::Add { v0, v1 } => {
                 mark_use(insn_id, v0);
                 mark_use(insn_id, v1);
             }
-            _ => todo!(),
+            Op::SendStatic { args, .. } => {
+                for opnd in args {
+                    mark_use(insn_id, opnd);
+                }
+            }
+            Op::Return { val, .. } => {
+                mark_use(insn_id, val);
+            }
+            Op::IfTrue { val, .. } => {
+                mark_use(insn_id, val);
+            }
+            Op::Jump { .. } => {}
         }
     }
     for (used, users) in uses.iter() {
