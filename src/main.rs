@@ -236,7 +236,7 @@ fn sctp(prog: &mut Program)
     while block_worklist.len() > 0 || insn_worklist.len() > 0
     {
         while let Some(insn_id) = insn_worklist.pop_front() {
-            let Insn {op, _, uses } = &prog.insns[insn_id];
+            let Insn {op, t, uses } = &prog.insns[insn_id];
             let old_value = values[insn_id];
             let value_of = |opnd: Opnd| -> Type {
                 match opnd {
