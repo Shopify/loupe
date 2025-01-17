@@ -102,6 +102,7 @@ enum Type
     #[default]
     Empty,
     Const(Value),
+    Int,
     Any,
 }
 
@@ -110,7 +111,11 @@ fn union(left: Type, right: Type) -> Type {
         (Type::Any, x) | (x, Type::Any) => Type::Any,
         (Type::Empty, x) | (x, Type::Empty) => x,
         (l, r) if l == r => l,
-        (Type::Const(l), Type::Const(r)) => Type::Any,
+        (Type::Int, Type::Const(Value::Int(_))) | (Type::Const(Value::Int(_)), Type::Int) => Type::Int,
+        (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => Type::Int,
+        (Type::Int, Type::Int) => Type::Int,
+        (Type::Int, Type::Const(_)) | (Type::Const(_), Type::Int) => Type::Any,
+        (Type::Const(_), Type::Const(_)) => Type::Any,
     }
 }
 
@@ -307,6 +312,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Add {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
+                        (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
                 }
@@ -493,6 +499,35 @@ fn main()
 }
 
 #[cfg(test)]
+mod union_tests {
+    use super::*;
+
+    #[test]
+    fn test_any() {
+        assert_eq!(union(Type::Any, Type::Any), Type::Any);
+        assert_eq!(union(Type::Any, Type::Int), Type::Any);
+        assert_eq!(union(Type::Any, Type::Empty), Type::Any);
+        assert_eq!(union(Type::Any, Type::Const(Value::Int(5))), Type::Any);
+    }
+
+    #[test]
+    fn test_empty() {
+        assert_eq!(union(Type::Empty, Type::Any), Type::Any);
+        assert_eq!(union(Type::Empty, Type::Int), Type::Int);
+        assert_eq!(union(Type::Empty, Type::Empty), Type::Empty);
+        assert_eq!(union(Type::Empty, Type::Const(Value::Int(5))), Type::Const(Value::Int(5)));
+    }
+
+    #[test]
+    fn test_const() {
+        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(3))), Type::Const(Value::Int(3)));
+        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(4))), Type::Int);
+        assert_eq!(union(Type::Const(Value::Int(3)), Type::Int), Type::Int);
+        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Bool(true))), Type::Any);
+    }
+}
+
+#[cfg(test)]
 mod compute_uses_tests {
     use super::*;
 
@@ -619,6 +654,15 @@ mod sctp_tests {
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id)), (block_id, Opnd::Const(Value::Int(8)))] });
         let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi_id], Type::Int);
+    }
+
+    #[test]
+    fn test_phi_different_type() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::InsnOut(add_id)), (block_id, Opnd::Const(Value::Bool(true)))] });
+        let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi_id], Type::Any);
     }
 
@@ -630,7 +674,7 @@ mod sctp_tests {
         let else_block = prog.new_block();
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::InsnOut(phi_id), then_block, else_block });
         let result = sctp(&mut prog);
-        assert_eq!(result.insn_type[phi_id], Type::Any);
+        assert_eq!(result.insn_type[phi_id], Type::Int);
         assert_eq!(result.block_executable[then_block], true);
         assert_eq!(result.block_executable[else_block], true);
     }
