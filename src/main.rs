@@ -193,6 +193,7 @@ struct Insn
 pub enum Value {
     Nil,
     Int(i64),
+    Bool(bool),
     Fun(FunId),
 }
 
@@ -278,8 +279,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
                 match value_of(val.clone()) {
-                    Type::Const(Value::Int(0)) => block_worklist.push_back(*else_block),
-                    Type::Const(Value::Int(n)) => block_worklist.push_back(*then_block),
+                    Type::Const(Value::Bool(false)) => block_worklist.push_back(*else_block),
+                    Type::Const(Value::Bool(true)) => block_worklist.push_back(*then_block),
                     _ => {
                         block_worklist.push_back(*then_block);
                         block_worklist.push_back(*else_block);
@@ -580,7 +581,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let then_block = prog.new_block();
         let else_block = prog.new_block();
-        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Int(1)), then_block, else_block });
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Bool(true)), then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], true);
         assert_eq!(result.block_executable[else_block], false);
@@ -591,7 +592,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let then_block = prog.new_block();
         let else_block = prog.new_block();
-        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Int(0)), then_block, else_block });
+        let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Const(Value::Bool(false)), then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], false);
         assert_eq!(result.block_executable[else_block], true);
