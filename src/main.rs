@@ -153,7 +153,7 @@ struct Block
 #[derive(Debug)]
 struct Insn
 {
-    op: InsnOp,
+    op: Op,
 
     // Output type of this instruction
     t: Type,
@@ -181,7 +181,7 @@ pub enum Opnd {
 }
 
 #[derive(Debug)]
-enum InsnOp
+enum Op
 {
     Phi { ins: Vec<(BlockId, Opnd)> },
     Add { v0: Opnd, v1: Opnd },
