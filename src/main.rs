@@ -238,6 +238,7 @@ enum Op
     Add { v0: Opnd, v1: Opnd },
     Mul { v0: Opnd, v1: Opnd },
     LessThan { v0: Opnd, v1: Opnd },
+    IsNil { v: Opnd },
 
     // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
@@ -353,6 +354,13 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                         _ => Type::Any,
                     }
                 }
+                Op::IsNil { v } => {
+                    match value_of(v) {
+                        Type::Const(Value::Nil) => Type::Const(Value::Bool(true)),
+                        Type::Const(_) => Type::Const(Value::Bool(false)),
+                        _ => Type::Any,
+                    }
+                }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd)) } else { acc })
@@ -413,9 +421,12 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
                     mark_use(insn_id, opnd);
                 }
             }
-            Op::Add { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 }=> {
+            Op::Add { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 } => {
                 mark_use(insn_id, v0);
                 mark_use(insn_id, v1);
+            }
+            Op::IsNil { v } => {
+                mark_use(insn_id, v);
             }
             Op::SendStatic { args, .. } => {
                 for opnd in args {
@@ -769,7 +780,7 @@ mod sctp_tests {
     }
 
     #[test]
-    fn test_sum() {
+    fn test_loop_sum() {
         /*
         entry:
             Jump body
@@ -798,5 +809,17 @@ mod sctp_tests {
         assert_eq!(result.insn_type[n], Type::Int);
         assert_eq!(result.insn_type[n_inc], Type::Int);
         assert_eq!(result.insn_type[cond], Type::Bool);
+    }
+
+    #[test]
+    fn test_factorial() {
+        // fact(n)
+        //   if n < 3
+        //     return n
+        //   else
+        //     n * fib(n-1)
+
+        // TODO:
+        // There is now a Mul insn we can use for this recursive test
     }
 }
