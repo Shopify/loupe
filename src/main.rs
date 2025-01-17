@@ -307,6 +307,33 @@ fn sctp(prog: &mut Program)
     }
 }
 
+fn compute_uses(prog: &mut Program) {
+    // Map of instructions to instructions that use them
+    // uses[A] = { B, C } means that B and C both use A in their operands
+    let mut uses: HashMap<InsnId, HashSet<InsnId>> = HashMap::new();
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        let Insn {op, .. } = insn;
+        let mut mark_use = |user: InsnId, opnd: &Opnd| {
+            match opnd {
+                Opnd::InsnOut(used) => {
+                    uses.entry(*used).or_default().insert(user);
+                }
+                _ => {}
+            }
+        };
+        match op {
+            Op::Add { v0, v1 } => {
+                mark_use(insn_id, v0);
+                mark_use(insn_id, v1);
+            }
+            _ => todo!(),
+        }
+    }
+    for (used, users) in uses.iter() {
+        prog.insns[*used].uses = users.iter().map(|x| *x).collect();
+    }
+}
+
 // TODO: port this to Rust
 fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<Vec<usize>>
 {
