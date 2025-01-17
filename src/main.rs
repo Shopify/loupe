@@ -35,12 +35,12 @@ impl LCG {
     }
 
     // Generate a random boolean
-    pub fn next_bool(&mut self) -> bool {
+    pub fn rand_bool(&mut self) -> bool {
         (self.next() & (1 << 60)) != 0
     }
 
     // Choose a random index in [0, max[
-    pub fn next_idx(&mut self, max: usize) -> usize {
+    pub fn rand_idx(&mut self, max: usize) -> usize {
         (self.next_u32() as usize) % max
     }
 
@@ -52,14 +52,14 @@ impl LCG {
 
     // Returns true with a specific percentage of probability
     pub fn pct_prob(&mut self, percent: usize) -> bool {
-        let idx = self.next_idx(100);
+        let idx = self.rand_idx(100);
         idx < percent
     }
 
     // Pick a random element from a slice
     pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
         assert!(!slice.is_empty());
-        &slice[self.next_idx(slice.len())]
+        &slice[self.rand_idx(slice.len())]
     }
 }
 
@@ -97,7 +97,6 @@ pub type InsnId = usize;
 // Type: Int, Nil, Class
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 enum Type
-
 {
     // Bottom is the empty set (no info propagated yet)
     #[default]
@@ -134,6 +133,26 @@ impl Program {
     pub fn reg_fun(&mut self, fun: Function) -> FunId {
         let id = self.funs.len();
         self.funs.push(fun);
+        id
+    }
+
+    // Register a block and assign it an id
+    pub fn reg_block(&mut self, block: Block) -> BlockId {
+        let id = self.blocks.len();
+        self.blocks.push(block);
+        id
+    }
+
+    // Add an instruction to the program
+    pub fn push_insn(&mut self, op: Op) -> InsnId {
+        let insn = Insn {
+            op,
+            t: Type::default(),
+            uses: Vec::default(),
+        };
+
+        let id = self.insns.len();
+        self.insns.push(insn);
         id
     }
 }
@@ -334,9 +353,18 @@ fn gen_torture_test(num_funs: usize) -> Program
         // If this is a leaf method
         if callees.is_empty() {
             // Return a constant
+            let const_val = if rng.rand_bool() {
+                Value::Nil
+            } else {
+                Value::Int(rng.rand_usize(0, 500) as i64)
+            };
+
+            let entry_block = Block::default();
 
 
 
+
+            fun.entry_block = prog.reg_block(entry_block);
         } else {
 
 
