@@ -248,6 +248,7 @@ enum Op
 // Sparse conditionall type propagation
 fn sctp(prog: &mut Program)
 {
+    compute_uses(prog);
     let num_blocks = prog.blocks.len();
     let mut executable: Vec<bool> = Vec::with_capacity(num_blocks);
     executable.resize(num_blocks, false);
@@ -256,9 +257,13 @@ fn sctp(prog: &mut Program)
     let mut values: Vec<Type> = Vec::with_capacity(num_insns);
     values.resize(num_insns, Type::Top);
 
+    // Mark entry as executable
+    let entry = prog.funs[prog.main].entry_block;
+    executable[entry] = true;
+
     // Work list of instructions or blocks
     let mut block_worklist: VecDeque<BlockId> = VecDeque::new();
-    let mut insn_worklist: VecDeque<InsnId> = VecDeque::new();
+    let mut insn_worklist: VecDeque<InsnId> = VecDeque::from(prog.blocks[entry].insns.clone());
 
     while block_worklist.len() > 0 || insn_worklist.len() > 0
     {
@@ -312,6 +317,9 @@ fn sctp(prog: &mut Program)
                 insn_worklist.extend(&prog.blocks[block_id].insns);
             }
         }
+    }
+    for (insn_id, ty) in values.iter().enumerate() {
+        prog.insns[insn_id].t = *ty;
     }
 }
 
@@ -518,5 +526,36 @@ mod compute_uses_tests {
         compute_uses(&mut prog);
         assert_eq!(prog.insns[add_id].uses, vec![iftrue_id]);
         assert_eq!(prog.insns[iftrue_id].uses, vec![]);
+    }
+}
+
+#[cfg(test)]
+mod sctp_tests {
+    use super::*;
+
+    fn prog_with_empty_fun() -> (Program, FunId, BlockId) {
+        let mut prog = Program::default();
+        prog.main = 0;
+        let (fun_id, block_id) = prog.new_fun();
+        (prog, fun_id, block_id)
+    }
+
+    #[test]
+    fn test_add_const() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        assert_eq!(prog.insns[add_id].t, Type::Bottom);
+        sctp(&mut prog);
+        assert_eq!(prog.insns[add_id].t, Type::Const(Value::Int(7)));
+    }
+
+    #[test]
+    fn test_add_insn() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
+        let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::InsnOut(add0_id), v1: Opnd::Const(Value::Int(5)) });
+        assert_eq!(prog.insns[add1_id].t, Type::Bottom);
+        sctp(&mut prog);
+        assert_eq!(prog.insns[add1_id].t, Type::Const(Value::Int(12)));
     }
 }
