@@ -267,12 +267,18 @@ enum Op
 struct AnalysisResult {
     // Indexable by BlockId; indicates if the given block is potentially executable/reachable
     block_executable: Vec<bool>,
+
     // Indexable by InsnId; indicates the computed type of the result of the instruction
     // Instructions without outputs do not have types and their entries in this vector mean nothing
     insn_type: Vec<Type>,
+
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
     insn_uses: Vec<Vec<InsnId>>,
+
+    // Number of iterations needed by the type analysis to
+    // compute its result
+    itr_count: usize,
 }
 
 // Sparse conditionall type propagation
@@ -295,9 +301,13 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     let mut block_worklist: VecDeque<BlockId> = VecDeque::new();
     let mut insn_worklist: VecDeque<InsnId> = VecDeque::from(prog.blocks[entry].insns.clone());
 
+    let mut itr_count = 0;
+
     while block_worklist.len() > 0 || insn_worklist.len() > 0
     {
         while let Some(insn_id) = insn_worklist.pop_front() {
+            itr_count += 1;
+
             let Insn {op} = &prog.insns[insn_id];
             let old_value = values[insn_id];
             let value_of = |opnd: &Opnd| -> Type {
@@ -395,14 +405,23 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 insn_worklist.extend(&uses[insn_id]);
             }
         }
+
         while let Some(block_id) = block_worklist.pop_front() {
+            itr_count += 1;
+
             if !executable[block_id] {
                 executable[block_id] = true;
                 insn_worklist.extend(&prog.blocks[block_id].insns);
             }
         }
     }
-    AnalysisResult { block_executable: executable, insn_type: values, insn_uses: uses }
+
+    AnalysisResult {
+        block_executable: executable,
+        insn_type: values,
+        insn_uses: uses,
+        itr_count
+    }
 }
 
 fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
