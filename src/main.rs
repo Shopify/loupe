@@ -284,7 +284,7 @@ struct AnalysisResult {
 // Sparse conditionall type propagation
 fn sctp(prog: &mut Program) -> AnalysisResult
 {
-    let uses = compute_uses(prog);
+    let graph = compute_uses(prog);
     let num_blocks = prog.blocks.len();
     let mut executable: Vec<bool> = Vec::with_capacity(num_blocks);
     executable.resize(num_blocks, false);
@@ -334,13 +334,13 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             if let Op::Return { val, parent_fun } = op {
                 let arg_value = value_of(val);
-                for caller_insn in &uses[insn_id] {
+                for caller_insn in &graph.insn_uses[insn_id] {
                     // TODO(max): Only take into account Returns coming from from reachable blocks
                     let old_value = values[*caller_insn].clone();
                     let new_value = union(old_value, arg_value);
                     if new_value != old_value {
                         values[*caller_insn] = new_value;
-                        insn_worklist.extend(&uses[insn_id]);
+                        insn_worklist.extend(&graph.insn_uses[insn_id]);
                     }
                 }
                 continue;
@@ -381,11 +381,10 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Param { idx, parent_fun } => {
                     let mut result = Type::Empty;
-                    // TODO(max): Find all instructions that Param uses in compute_uses instead of
-                    // iterating over every instruction
-                    for (insn_id, insn) in prog.insns.iter().enumerate() {
-                        match &insn.op {
-                            Op::SendStatic { target, args } if *target == *parent_fun => {
+                    for caller_id in &graph.called_by[*parent_fun] {
+                        match &prog.insns[*caller_id].op {
+                            Op::SendStatic { target, args } => {
+                                assert_eq!(*target, *parent_fun);
                                 let arg_type = if *idx < args.len() { value_of(&args[*idx]) } else { Type::Any };
                                 result = union(result, arg_type);
                             }
@@ -402,7 +401,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             if union(old_value, new_value) != old_value {
                 values[insn_id] = new_value;
-                insn_worklist.extend(&uses[insn_id]);
+                insn_worklist.extend(&graph.insn_uses[insn_id]);
             }
         }
 
@@ -419,12 +418,19 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     AnalysisResult {
         block_executable: executable,
         insn_type: values,
-        insn_uses: uses,
+        insn_uses: graph.insn_uses,
         itr_count
     }
 }
 
-fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
+struct CallGraph {
+    // Map of InsnId -> instructions that use that insn
+    insn_uses: Vec<Vec<InsnId>>,
+    // Map of FunId -> Send instructions that call that fun
+    called_by: Vec<Vec<InsnId>>,
+}
+
+fn compute_uses(prog: &mut Program) -> CallGraph {
     // Map of functions to instructions that called them
     let num_funs = prog.funs.len();
     let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
@@ -488,7 +494,10 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
             Op::Jump { .. } => {}
         }
     }
-    uses.into_iter().map(|set| set.into_iter().collect()).collect()
+    CallGraph {
+        insn_uses: uses.into_iter().map(|set| set.into_iter().collect()).collect(),
+        called_by: called_by.into_iter().map(|set| set.into_iter().collect()).collect(),
+    }
 }
 
 // TODO: port this to Rust
@@ -668,9 +677,9 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::Insn(add_id), parent_fun: fun_id });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[add_id], vec![ret_id]);
-        assert_eq!(uses[ret_id], vec![]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[add_id], vec![ret_id]);
+        assert_eq!(insn_uses[ret_id], vec![]);
     }
 
     #[test]
@@ -678,9 +687,9 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Insn(add0_id), v1: Opnd::Insn(add0_id) });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[add0_id], vec![add1_id]);
-        assert_eq!(uses[add1_id], vec![]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[add0_id], vec![add1_id]);
+        assert_eq!(insn_uses[add1_id], vec![]);
     }
 
     #[test]
@@ -688,9 +697,9 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id))] });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[add_id], vec![phi_id]);
-        assert_eq!(uses[phi_id], vec![]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[add_id], vec![phi_id]);
+        assert_eq!(insn_uses[phi_id], vec![]);
     }
 
     #[test]
@@ -699,9 +708,9 @@ mod compute_uses_tests {
         let (target, target_entry) = prog.new_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Insn(add_id)] });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[add_id], vec![send_id]);
-        assert_eq!(uses[send_id], vec![]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[add_id], vec![send_id]);
+        assert_eq!(insn_uses[send_id], vec![]);
     }
 
     #[test]
@@ -710,9 +719,9 @@ mod compute_uses_tests {
         let (target, target_entry) = prog.new_fun();
         let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[send_id], vec![]);
-        assert_eq!(uses[ret_id], vec![send_id]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[send_id], vec![]);
+        assert_eq!(insn_uses[ret_id], vec![send_id]);
     }
 
     #[test]
@@ -722,8 +731,8 @@ mod compute_uses_tests {
         let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
         let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[send_id], vec![param_id]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[send_id], vec![param_id]);
     }
 
     #[test]
@@ -731,9 +740,9 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(add_id), then_block: 3, else_block: 4 });
-        let uses = compute_uses(&mut prog);
-        assert_eq!(uses[add_id], vec![iftrue_id]);
-        assert_eq!(uses[iftrue_id], vec![]);
+        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        assert_eq!(insn_uses[add_id], vec![iftrue_id]);
+        assert_eq!(insn_uses[iftrue_id], vec![]);
     }
 }
 
