@@ -252,6 +252,10 @@ enum Op
     // on the Function object this instruction belongs to
     Return { val: Opnd, parent_fun: FunId },
 
+    // Load a function parameter. Knows which function it belongs to so that we can more easily
+    // flow type information in SCTP.
+    Param { idx: usize, parent_fun: FunId },
+
     // Wait until we have basic interprocedural analysis working
     //GetIvar,
     //SetIvar,
@@ -365,6 +369,21 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd)) } else { acc })
                 }
+                Op::Param { idx, parent_fun } => {
+                    let mut result = Type::Empty;
+                    // TODO(max): Find all instructions that Param uses in compute_uses instead of
+                    // iterating over every instruction
+                    for (insn_id, insn) in prog.insns.iter().enumerate() {
+                        match &insn.op {
+                            Op::SendStatic { target, args } if *target == *parent_fun => {
+                                let arg_type = if *idx < args.len() { value_of(&args[*idx]) } else { Type::Any };
+                                result = union(result, arg_type);
+                            }
+                            _ => {}
+                        }
+                    }
+                    result
+                }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
                     Type::Empty  // This will get filled in by all Return instructions that could flow to it
@@ -437,6 +456,11 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
                 mark_use(insn_id, val);
                 for caller in &called_by[*parent_fun] {
                     mark_use(*caller, &Opnd::Insn(insn_id));
+                }
+            }
+            Op::Param { idx, parent_fun } => {
+                for caller in &called_by[*parent_fun] {
+                    mark_use(insn_id, &Opnd::Insn(*caller));
                 }
             }
             Op::IfTrue { val, .. } => {
@@ -649,6 +673,17 @@ mod compute_uses_tests {
     }
 
     #[test]
+    fn test_param_uses_send() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
+        let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
+        let uses = compute_uses(&mut prog);
+        assert_eq!(uses[send_id], vec![param_id]);
+    }
+
+    #[test]
     fn test_iftrue() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
@@ -813,6 +848,31 @@ mod sctp_tests {
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[target_entry], true);
         assert_eq!(result.insn_type[send_id], Type::Const(Value::Int(5)));
+    }
+
+    #[test]
+    fn test_one_send_flows_to_param() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id), parent_fun: target });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[target_entry], true);
+        assert_eq!(result.insn_type[param_id], Type::Const(Value::Int(5)));
+    }
+
+    #[test]
+    fn test_two_sends_flow_to_param() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id), parent_fun: target });
+        let send0_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
+        let send1_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(6))] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[target_entry], true);
+        assert_eq!(result.insn_type[param_id], Type::Int);
     }
 
     #[test]
