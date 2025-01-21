@@ -876,6 +876,22 @@ mod sctp_tests {
     }
 
     #[test]
+    fn test_send_multiple_args() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (target, target_entry) = prog.new_fun();
+        let param0_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
+        let param1_id = prog.push_insn(target_entry, Op::Param { idx: 1, parent_fun: target });
+        let add_id = prog.push_insn(target_entry, Op::Add { v0: Opnd::Insn(param0_id), v1: Opnd::Insn(param1_id) });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(add_id), parent_fun: target });
+        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[target_entry], true);
+        assert_eq!(result.insn_type[param0_id], Type::Const(Value::Int(3)));
+        assert_eq!(result.insn_type[param1_id], Type::Const(Value::Int(4)));
+        assert_eq!(result.insn_type[send_id], Type::Const(Value::Int(7)));
+    }
+
+    #[test]
     fn test_loop_sum() {
         /*
         entry:
