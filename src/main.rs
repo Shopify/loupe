@@ -620,6 +620,20 @@ fn main()
         }
     }
 
+    // FIXME: this should be int
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        if let Op::Return { parent_fun, .. } = insn.op {
+            if parent_fun == prog.main {
+                let ret_type = result.insn_type[insn_id];
+                println!("main return type: {:?}", ret_type);
+
+                //if ret_type != { panic!(); }
+            }
+        }
+    }
+
+
+
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
 }
