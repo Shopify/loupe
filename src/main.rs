@@ -595,8 +595,16 @@ fn main()
 
 
 
-    let mut prog = gen_torture_test(200);
-    sctp(&mut prog);
+    let mut prog = gen_torture_test(10_000);
+
+    use std::time::Instant;
+    let start_time = Instant::now();
+    let result = sctp(&mut prog);
+    let duration = start_time.elapsed();
+    let time_ms = duration.as_secs_f64() * 1000.0;
+
+    println!("analysis time: {:.1} ms", time_ms);
+    println!("itr count: {}", result.itr_count);
 }
 
 #[cfg(test)]
