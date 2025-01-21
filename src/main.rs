@@ -339,6 +339,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     let old_value = values[*caller_insn].clone();
                     let new_value = union(old_value, arg_value);
                     if new_value != old_value {
+                        println!("[{insn_id}] reflowing after return {val:?}");
                         values[*caller_insn] = new_value;
                         insn_worklist.extend(&graph.insn_uses[insn_id]);
                     }
@@ -382,24 +383,30 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Param { idx, parent_fun } => {
                     let mut result = Type::Empty;
                     for caller_id in &graph.called_by[*parent_fun] {
+                        println!("called by {caller_id}");
                         match &prog.insns[*caller_id].op {
                             Op::SendStatic { target, args } => {
+                                println!("it's a send!");
                                 assert_eq!(*target, *parent_fun);
                                 let arg_type = if *idx < args.len() { value_of(&args[*idx]) } else { Type::Any };
+                                println!("it's a send with arg type {arg_type:?}!");
                                 result = union(result, arg_type);
                             }
                             _ => {}
                         }
                     }
+                    println!("...result is {:?}", result);
                     result
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
+                    // insn_worklist.extend(&prog.blocks[prog.funs[*target].entry_block].insns);
                     Type::Empty  // This will get filled in by all Return instructions that could flow to it
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(old_value, new_value) != old_value {
+                println!("saw a change; reflowing {insn_id}");
                 values[insn_id] = new_value;
                 insn_worklist.extend(&graph.insn_uses[insn_id]);
             }
@@ -439,6 +446,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
         let Insn { op, .. } = insn;
         match op {
             Op::SendStatic { target, args } => {
+                println!("insn {insn_id} calls fun {target}");
                 called_by[*target].insert(insn_id);
             }
             _ => {}
@@ -450,7 +458,6 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
     uses.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
-        let Insn {op, .. } = insn;
         let mut mark_use = |user: InsnId, opnd: &Opnd| {
             match opnd {
                 Opnd::Insn(used) => {
@@ -459,7 +466,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                 _ => {}
             }
         };
-        match op {
+        match &insn.op {
             Op::Phi { ins } => {
                 for (_, opnd) in ins {
                     mark_use(insn_id, opnd);
@@ -978,12 +985,46 @@ mod sctp_tests {
     #[test]
     fn test_factorial() {
         // fact(n)
-        //   if n < 3
-        //     return n
+        //   if n < 2
+        //     return 1
         //   else
-        //     n * fib(n-1)
+        //     n * fact(n-1)
 
-        // TODO:
-        // There is now a Mul insn we can use for this recursive test
+        /*
+        entry:
+            n = Param(0)
+            lt = LessThan n, Const(2)
+            IfTrue lt, early_exit, do_mul
+        early_exit:
+            Return Const(1)
+        do_mul:
+            sub = Add n, Const(-1)
+            rec = SendStatic fact, [ sub ]
+            mul = Mul n, rec
+            Return mul
+        */
+        let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
+        let n = prog.push_insn(entry_id, Op::Param { idx: 0, parent_fun: fun_id });
+        let lt = prog.push_insn(entry_id, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
+        let early_exit_id = prog.new_block();
+        let do_mul_id = prog.new_block();
+        prog.push_insn(entry_id, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_mul_id });
+        prog.push_insn(early_exit_id, Op::Return { val: ONE, parent_fun: fun_id });
+        let sub = prog.push_insn(do_mul_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
+        let rec = prog.push_insn(do_mul_id, Op::SendStatic { target: fun_id, args: vec![Opnd::Insn(sub)] });
+        let mul = prog.push_insn(do_mul_id, Op::Mul { v0: Opnd::Insn(n), v1: Opnd::Insn(rec) });
+        prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul), parent_fun: fun_id });
+        let result = sctp(&mut prog);
+        for (insn_id, insn) in prog.insns.iter().enumerate() {
+            println!("{insn_id}: [{:?}] {:?}", result.insn_type[insn_id], insn);
+        }
+        assert_eq!(result.block_executable[entry_id], true);
+        assert_eq!(result.block_executable[early_exit_id], true);
+        assert_eq!(result.block_executable[do_mul_id], true);
+        assert_eq!(result.insn_type[n], Type::Int);
+        assert_eq!(result.insn_type[lt], Type::Bool);
+        assert_eq!(result.insn_type[sub], Type::Int);
+        assert_eq!(result.insn_type[rec], Type::Int);
+        assert_eq!(result.insn_type[mul], Type::Int);
     }
 }
