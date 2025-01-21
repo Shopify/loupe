@@ -357,8 +357,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::IsNil { v } => {
                     match value_of(v) {
                         Type::Const(Value::Nil) => Type::Const(Value::Bool(true)),
-                        Type::Const(_) => Type::Const(Value::Bool(false)),
-                        _ => Type::Any,
+                        Type::Const(_) | Type::Int | Type::Bool => Type::Const(Value::Bool(false)),
+                        _ => Type::Bool,
                     }
                 }
                 Op::Phi { ins } => {
@@ -688,19 +688,39 @@ mod sctp_tests {
     }
 
     #[test]
-    fn test_isnil_non_nil() {
+    fn test_isnil_non_nil_const() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let add_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Int(3)) });
+        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Int(3)) });
         let result = sctp(&mut prog);
-        assert_eq!(result.insn_type[add_id], Type::Const(Value::Bool(false)));
+        assert_eq!(result.insn_type[isnil_id], Type::Const(Value::Bool(false)));
     }
 
     #[test]
     fn test_isnil_nil() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let add_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Nil) });
+        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Nil) });
         let result = sctp(&mut prog);
-        assert_eq!(result.insn_type[add_id], Type::Const(Value::Bool(true)));
+        assert_eq!(result.insn_type[isnil_id], Type::Const(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_isnil_int_type() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Int(3))), (block_id, Opnd::Const(Value::Int(4)))] });
+        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Insn(phi_id) });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi_id], Type::Int);
+        assert_eq!(result.insn_type[isnil_id], Type::Const(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_isnil_any() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Bool(true))), (block_id, Opnd::Const(Value::Int(4)))] });
+        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Insn(phi_id) });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi_id], Type::Any);
+        assert_eq!(result.insn_type[isnil_id], Type::Bool);
     }
 
     #[test]
