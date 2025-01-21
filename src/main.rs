@@ -612,6 +612,14 @@ fn main()
     let duration = start_time.elapsed();
     let time_ms = duration.as_secs_f64() * 1000.0;
 
+    // Check that all functions marked executable
+    for fun in &prog.funs {
+        let entry_id = fun.entry_block;
+        if !result.block_executable[entry_id] {
+            panic!("all function entry blocks should be executable");
+        }
+    }
+
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
 }
