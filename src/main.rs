@@ -530,17 +530,34 @@ fn gen_torture_test(num_funs: usize) -> Program
                 Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
             );
         } else {
+            let mut last_block = entry_block;
+            let mut sum_val = ZERO;
+
             // Call the callees and do nothing with the return value for now
             for callee_id in callees {
-                prog.push_insn(
-                    entry_block,
+                let nil_block = prog.new_block();
+                let int_block = prog.new_block();
+                let sum_block = prog.new_block();
+
+                let call_insn = prog.push_insn(
+                    last_block,
                     Op::SendStatic { target: *callee_id, args: vec![] }
                 );
+                let isnil_insn = prog.push_insn(last_block, Op::IsNil { v: Opnd::Insn(call_insn) });
+                prog.push_insn(last_block, Op::IfTrue { val: Opnd::Insn(isnil_insn), then_block: nil_block, else_block: int_block });
+
+                // Both branches go to the sum block
+                prog.push_insn(nil_block, Op::Jump { target: sum_block });
+                prog.push_insn(int_block, Op::Jump { target: sum_block });
+
+                // Compute the sum
+                let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
+                prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
             }
 
             prog.push_insn(
-                entry_block,
-                Op::Return { val: NIL, parent_fun: fun_id }
+                last_block,
+                Op::Return { val: sum_val, parent_fun: fun_id }
             );
         }
     }
@@ -560,7 +577,6 @@ fn main()
 
 
     let mut prog = gen_torture_test(200);
-    //compute_uses(&mut prog);
     sctp(&mut prog);
 }
 
