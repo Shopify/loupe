@@ -688,6 +688,22 @@ mod sctp_tests {
     }
 
     #[test]
+    fn test_isnil_non_nil() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Int(3)) });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[add_id], Type::Const(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_isnil_nil() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let add_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Nil) });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[add_id], Type::Const(Value::Bool(true)));
+    }
+
+    #[test]
     fn test_less_than() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let lt0_id = prog.push_insn(block_id, Op::LessThan { v0: Opnd::Const(Value::Int(7)), v1: Opnd::Const(Value::Int(8)) });
