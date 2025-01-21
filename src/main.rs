@@ -581,6 +581,7 @@ fn gen_torture_test(num_funs: usize) -> Program
                 // Compute the sum
                 let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
                 prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
+                sum_val = Opnd::Insn(phi_id);
             }
 
             prog.push_insn(
@@ -620,17 +621,21 @@ fn main()
         }
     }
 
+
+
     // FIXME: this should be int
     for (insn_id, insn) in prog.insns.iter().enumerate() {
-        if let Op::Return { parent_fun, .. } = insn.op {
-            if parent_fun == prog.main {
-                let ret_type = result.insn_type[insn_id];
+        if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
+            if *parent_fun == prog.main {
+                let ret_type = result.insn_type[*ret_id];
                 println!("main return type: {:?}", ret_type);
 
                 //if ret_type != { panic!(); }
             }
         }
     }
+
+
 
 
 
