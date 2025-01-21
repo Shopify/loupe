@@ -500,7 +500,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     }
 }
 
-// TODO: port this to Rust
+// Generate a random acyclic call graph
 fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<Vec<usize>>
 {
     let mut callees: Vec<Vec<FunId>> = Vec::new();
@@ -530,6 +530,7 @@ fn gen_torture_test(num_funs: usize) -> Program
     let mut rng = LCG::new(1337);
 
     let callees = random_dag(&mut rng, num_funs, 1, 10);
+    assert!(callees[0].len() > 0);
 
     let mut prog = Program::default();
 
