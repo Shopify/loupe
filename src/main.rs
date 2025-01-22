@@ -559,11 +559,15 @@ fn gen_torture_test(num_funs: usize) -> Program
                 Value::Int(rand_int)
             };
 
+            //println!("{}: {:?}", fun_id, const_val);
+
             prog.push_insn(
                 entry_block,
                 Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
             );
         } else {
+            //println!("{}: callees: {:?}", fun_id, callees);
+
             let mut last_block = entry_block;
             let mut sum_val = ZERO;
 
@@ -586,8 +590,8 @@ fn gen_torture_test(num_funs: usize) -> Program
 
                 // Compute the sum
                 let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
-                prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
-                sum_val = Opnd::Insn(phi_id);
+                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
+                sum_val = Opnd::Insn(add_id);
             }
 
             prog.push_insn(
@@ -611,7 +615,7 @@ fn main()
 
 
 
-    let mut prog = gen_torture_test(10_000);
+    let mut prog = gen_torture_test(5);
 
     use std::time::Instant;
     let start_time = Instant::now();
