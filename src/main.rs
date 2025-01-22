@@ -290,8 +290,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     executable.resize(num_blocks, false);
 
     let num_insns = prog.insns.len();
-    let mut values: Vec<Type> = Vec::with_capacity(num_insns);
-    values.resize(num_insns, Type::Empty);
+    let mut types: Vec<Type> = Vec::with_capacity(num_insns);
+    types.resize(num_insns, Type::Empty);
 
     // Mark entry as executable
     let entry = prog.funs[prog.main].entry_block;
@@ -309,11 +309,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             itr_count += 1;
 
             let Insn {op, ..} = &prog.insns[insn_id];
-            let old_value = values[insn_id];
-            let value_of = |opnd: &Opnd| -> Type {
+            let old_value = types[insn_id];
+            let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
-                    Opnd::Insn(insn_id) => values[*insn_id],
+                    Opnd::Insn(insn_id) => types[*insn_id],
                 }
             };
             let is_insn_reachable = |insn_id: InsnId| -> bool {
@@ -321,7 +321,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
-                match value_of(val) {
+                match type_of(val) {
                     Type::Empty => {},
                     Type::Const(Value::Bool(false)) => block_worklist.push_back(*else_block),
                     Type::Const(Value::Bool(true)) => block_worklist.push_back(*then_block),
@@ -347,7 +347,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             // Now handle expression-like instructions
             let new_value = match op {
                 Op::Add {v0, v1} => {
-                    match (value_of(v0), value_of(v1)) {
+                    match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) =>
                             match l.checked_add(r) {
@@ -359,7 +359,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     }
                 }
                 Op::Mul {v0, v1} => {
-                    match (value_of(v0), value_of(v1)) {
+                    match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) =>
                             match l.checked_mul(r) {
@@ -371,7 +371,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     }
                 }
                 Op::LessThan {v0, v1} => {
-                    match (value_of(v0), value_of(v1)) {
+                    match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
                         (l, r) if union(l, r) == Type::Int => Type::Bool,
@@ -379,7 +379,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     }
                 }
                 Op::IsNil { v } => {
-                    match value_of(v) {
+                    match type_of(v) {
                         Type::Empty => Type::Empty,
                         Type::Const(Value::Nil) => Type::Const(Value::Bool(true)),
                         Type::Const(_) | Type::Int | Type::Bool => Type::Const(Value::Bool(false)),
@@ -388,19 +388,19 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
-                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd)) } else { acc })
+                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, value_of(opnd)))
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, value_of(opnd)))
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, type_of(opnd)))
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(old_value, new_value) != old_value {
-                values[insn_id] = new_value;
+                types[insn_id] = new_value;
                 for use_id in &graph.insn_uses[insn_id] {
                     if is_insn_reachable(*use_id) {
                         insn_worklist.push_back(*use_id);
@@ -421,7 +421,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 
     AnalysisResult {
         block_executable: executable,
-        insn_type: values,
+        insn_type: types,
         insn_uses: graph.insn_uses,
         itr_count
     }
