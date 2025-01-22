@@ -380,7 +380,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::IsNil { v } => {
                     match value_of(v) {
-                    Type::Empty => Type::Empty,
+                        Type::Empty => Type::Empty,
                         Type::Const(Value::Nil) => Type::Const(Value::Bool(true)),
                         Type::Const(_) | Type::Int | Type::Bool => Type::Const(Value::Bool(false)),
                         _ => Type::Bool,
