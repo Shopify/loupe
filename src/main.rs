@@ -309,11 +309,6 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             itr_count += 1;
 
             let Insn {op, ..} = &prog.insns[insn_id];
-            // println!("looking at: {op:?}");
-            // for (insn_id, insn) in prog.insns.iter().enumerate() {
-            //     println!("{insn_id}: [{:?}] {:?}", values[insn_id], insn);
-            // }
-            // println!("----------------------------------");
             let old_value = values[insn_id];
             let value_of = |opnd: &Opnd| -> Type {
                 match opnd {
