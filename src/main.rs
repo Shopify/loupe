@@ -213,7 +213,7 @@ pub enum Value {
     Fun(FunId),
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Opnd {
     // Constant
     Const(Value),
@@ -382,30 +382,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Param { idx, parent_fun } => {
                     let mut result = Type::Empty;
-                    for caller_id in &graph.called_by[*parent_fun] {
-                        match &prog.insns[*caller_id].op {
-                            Op::SendStatic { target, args } => {
-                                assert_eq!(*target, *parent_fun);
-                                let arg_type = if *idx < args.len() { value_of(&args[*idx]) } else { Type::Any };
-                                result = union(result, arg_type);
-                            }
-                            _ => {}
-                        }
-                    }
-                    result
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, value_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
-                    let mut result = Type::Empty;
-                    for return_id in graph.flows_to[insn_id].iter() {
-                        match &prog.insns[*return_id].op {
-                            Op::Return { val, parent_fun } => {
-                                result = union(result, value_of(&val));
-                            },
-                            op => panic!("only Return is expected to flow to sends. found {op:?}"),
-                        }
-                    }
-                    result
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, value_of(opnd)))
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
@@ -436,12 +417,9 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 struct CallGraph {
     // Map of InsnId -> instructions that use that insn
     insn_uses: Vec<Vec<InsnId>>,
-    // Map of FunId -> Send instructions that call that fun
-    called_by: Vec<Vec<InsnId>>,
-    // Map of InsnId -> instructions that flow to that insn
-    // For sends, it is only Return insns, and only their values; not the result of the Return
-    // TODO(max): Should this be a vec of Opnd?
-    flows_to: Vec<Vec<InsnId>>,
+    // Map of InsnId -> operands that flow to that insn
+    // Flow goes from send arguments to function parameters and from return values to send results
+    flows_to: Vec<Vec<Opnd>>,
 }
 
 fn compute_uses(prog: &mut Program) -> CallGraph {
@@ -464,7 +442,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
     uses.resize(num_insns, HashSet::new());
     // Map of InsnId -> instructions that flow to that insn
-    let mut flows_to: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
+    let mut flows_to: Vec<HashSet<Opnd>> = Vec::with_capacity(num_insns);
     flows_to.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let mut mark_use = |user: InsnId, opnd: &Opnd| {
@@ -497,12 +475,20 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                 mark_use(insn_id, val);
                 for caller in &called_by[*parent_fun] {
                     mark_use(*caller, &Opnd::Insn(insn_id));
-                    flows_to[*caller].insert(insn_id);
+                    flows_to[*caller].insert(val.clone());
                 }
             }
             Op::Param { idx, parent_fun } => {
                 for caller in &called_by[*parent_fun] {
                     mark_use(insn_id, &Opnd::Insn(*caller));
+                    match &prog.insns[*caller].op {
+                        Op::SendStatic { args, .. } => {
+                            if *idx < args.len() {
+                                flows_to[insn_id].insert(args[*idx].clone());
+                            }
+                        }
+                        op => panic!("Only send should call function; found {op:?}"),
+                    }
                 }
             }
             Op::IfTrue { val, .. } => {
@@ -513,7 +499,6 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     }
     CallGraph {
         insn_uses: uses.into_iter().map(|set| set.into_iter().collect()).collect(),
-        called_by: called_by.into_iter().map(|set| set.into_iter().collect()).collect(),
         flows_to: flows_to.into_iter().map(|set| set.into_iter().collect()).collect(),
     }
 }
