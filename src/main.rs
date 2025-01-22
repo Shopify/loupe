@@ -141,25 +141,23 @@ struct Program
 impl Program {
     // Register a function and assign it an id
     pub fn new_fun(&mut self) -> (FunId, BlockId) {
-        let mut fun = Function::default();
-        let entry_block = self.new_block();
-        fun.entry_block = entry_block;
-
         let id = self.funs.len();
-        self.funs.push(fun);
+        let entry_block = self.new_block(id);
+        self.funs.push(Function { entry_block });
         (id, entry_block)
     }
 
     // Register a block and assign it an id
-    pub fn new_block(&mut self) -> BlockId {
+    pub fn new_block(&mut self, fun_id: FunId) -> BlockId {
         let id = self.blocks.len();
-        self.blocks.push(Block::default());
+        self.blocks.push(Block { fun_id, insns: vec![] });
         id
     }
 
     // Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
         let insn = Insn {
+            block_id: block,
             op,
         };
 
@@ -175,13 +173,13 @@ impl Program {
     fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
         let insn = &mut self.insns[insn_id] ;
         match insn {
-            Insn { op: Op::Phi { ins } } => ins.push((block_id, opnd)),
+            Insn { op: Op::Phi { ins }, .. } => ins.push((block_id, opnd)),
             _ => panic!("Can't append phi arg to non-phi {:?}", insn)
         }
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct Function
 {
     entry_block: BlockId,
@@ -189,11 +187,12 @@ struct Function
     // We don't need an explicit list of blocks
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct Block
 {
     // Do we need to keep the phi nodes separate?
 
+    fun_id: FunId,
     insns: Vec<InsnId>,
 }
 
@@ -201,6 +200,7 @@ struct Block
 #[derive(Debug)]
 struct Insn
 {
+    block_id: BlockId,
     op: Op,
 }
 
@@ -308,7 +308,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
         while let Some(insn_id) = insn_worklist.pop_front() {
             itr_count += 1;
 
-            let Insn {op} = &prog.insns[insn_id];
+            let Insn {op, ..} = &prog.insns[insn_id];
             // println!("looking at: {op:?}");
             // for (insn_id, insn) in prog.insns.iter().enumerate() {
             //     println!("{insn_id}: [{:?}] {:?}", values[insn_id], insn);
@@ -320,6 +320,9 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     Opnd::Const(v) => Type::Const(*v),
                     Opnd::Insn(insn_id) => values[*insn_id],
                 }
+            };
+            let is_insn_reachable = |insn_id: InsnId| -> bool {
+                executable[prog.insns[insn_id].block_id]
             };
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
@@ -391,7 +394,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             if union(old_value, new_value) != old_value {
                 values[insn_id] = new_value;
-                insn_worklist.extend(&graph.insn_uses[insn_id]);
+                for use_id in &graph.insn_uses[insn_id] {
+                    if is_insn_reachable(*use_id) {
+                        insn_worklist.push_back(*use_id);
+                    }
+                }
             }
         }
 
@@ -573,9 +580,9 @@ fn gen_torture_test(num_funs: usize) -> Program
 
             // Call the callees and do nothing with the return value for now
             for callee_id in callees {
-                let nil_block = prog.new_block();
-                let int_block = prog.new_block();
-                let sum_block = prog.new_block();
+                let nil_block = prog.new_block(fun_id);
+                let int_block = prog.new_block(fun_id);
+                let sum_block = prog.new_block(fun_id);
 
                 let call_insn = prog.push_insn(
                     last_block,
@@ -636,7 +643,7 @@ fn main()
         if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
             if *parent_fun == prog.main {
                 let ret_type = result.insn_type[*ret_id];
-                println!("main return type: {:?}", ret_type);
+                println!("{insn_id}: main return type: {:?}", ret_type);
 
                 if ret_type != Type::Int {
                     panic!("output type should be integer");
@@ -884,8 +891,8 @@ mod sctp_tests {
     fn test_iftrue_any() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, ONE), (block_id, TWO)] });
-        let then_block = prog.new_block();
-        let else_block = prog.new_block();
+        let then_block = prog.new_block(fun_id);
+        let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(phi_id), then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi_id], Type::Int);
@@ -896,8 +903,8 @@ mod sctp_tests {
     #[test]
     fn test_iftrue_const_then() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let then_block = prog.new_block();
-        let else_block = prog.new_block();
+        let then_block = prog.new_block(fun_id);
+        let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: TRUE, then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], true);
@@ -907,8 +914,8 @@ mod sctp_tests {
     #[test]
     fn test_iftrue_const_else() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let then_block = prog.new_block();
-        let else_block = prog.new_block();
+        let then_block = prog.new_block(fun_id);
+        let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: FALSE, then_block, else_block });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[then_block], false);
@@ -918,7 +925,7 @@ mod sctp_tests {
     #[test]
     fn test_jump() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let target = prog.new_block();
+        let target = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::Jump { target });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[target], true);
@@ -990,8 +997,8 @@ mod sctp_tests {
             Return n
         */
         let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
-        let body_id = prog.new_block();
-        let end_id = prog.new_block();
+        let body_id = prog.new_block(fun_id);
+        let end_id = prog.new_block(fun_id);
         prog.push_insn(entry_id, Op::Jump { target: body_id });
         let n = prog.push_insn(body_id, Op::Phi { ins: vec![(entry_id, ZERO)] });
         let n_inc = prog.push_insn(body_id, Op::Add { v0: Opnd::Insn(n), v1: ONE });
@@ -1038,8 +1045,8 @@ mod sctp_tests {
         let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Const(Value::Int(5))] });
         let n = prog.push_insn(fact_entry, Op::Param { idx: 0, parent_fun: fact_id });
         let lt = prog.push_insn(fact_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
-        let early_exit_id = prog.new_block();
-        let do_mul_id = prog.new_block();
+        let early_exit_id = prog.new_block(fun_id);
+        let do_mul_id = prog.new_block(fun_id);
         prog.push_insn(fact_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_mul_id });
         prog.push_insn(early_exit_id, Op::Return { val: ONE, parent_fun: fact_id });
         let sub = prog.push_insn(do_mul_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
@@ -1088,13 +1095,13 @@ mod sctp_tests {
 
         SendStatic fib, [ Const(100) ]
         */
-        let (mut prog, _, entry_id) = prog_with_empty_fun();
+        let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
         let (fib_id, fib_entry) = prog.new_fun();
         let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Const(Value::Int(100))] });
         let n = prog.push_insn(fib_entry, Op::Param { idx: 0, parent_fun: fib_id });
         let lt = prog.push_insn(fib_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
-        let early_exit_id = prog.new_block();
-        let do_add_id = prog.new_block();
+        let early_exit_id = prog.new_block(fun_id);
+        let do_add_id = prog.new_block(fun_id);
         prog.push_insn(fib_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_add_id });
         prog.push_insn(early_exit_id, Op::Return { val: Opnd::Insn(n), parent_fun: fib_id });
         let sub1 = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
@@ -1116,5 +1123,40 @@ mod sctp_tests {
         assert_eq!(result.insn_type[sub2], Type::Int);
         assert_eq!(result.insn_type[rec2], Type::Int);
         assert_eq!(result.insn_type[add], Type::Int);
+    }
+
+    #[test]
+    fn test_eval_dead_insn_repro() {
+        /*
+        foo(x)
+            entry:
+                jump phi_block;
+
+            dead_block:
+                t = add x, 1; // no uses, produces the int type
+                t2 = is_nil t; // uses the add, so should get queued too, evaluates to false
+                iftrue t2 then phi_block; else dead_block; // gets queued because it uses t2, marks dead_block as executable
+
+            phi_block:
+                phi [entry: 0, dead_block: 1337]
+                return phi;
+        */
+        let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
+        let dead_block_id = prog.new_block(fun_id);
+        let phi_block_id = prog.new_block(fun_id);
+        let x = prog.push_insn(entry_id, Op::Param { idx: 0, parent_fun: fun_id });
+        prog.push_insn(entry_id, Op::Jump { target: phi_block_id });
+
+        let t = prog.push_insn(dead_block_id, Op::Add { v0: Opnd::Insn(x), v1: Opnd::Const(Value::Int(1)) });
+        let t2 = prog.push_insn(dead_block_id, Op::IsNil { v: Opnd::Insn(t) });
+        prog.push_insn(dead_block_id, Op::IfTrue { val: Opnd::Insn(t2), then_block: phi_block_id, else_block: dead_block_id });
+
+        let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
+        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+
+        let (caller_id, caller_entry) = prog.new_fun();
+        let outside_call = prog.push_insn(caller_entry, Op::SendStatic { target: fun_id, args: vec![Opnd::Const(Value::Int(100))] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[outside_call], Type::Const(Value::Int(0)));
     }
 }
