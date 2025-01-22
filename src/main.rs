@@ -381,7 +381,6 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, value_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
-                    let mut result = Type::Empty;
                     graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, value_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
