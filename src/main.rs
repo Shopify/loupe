@@ -1051,4 +1051,59 @@ mod sctp_tests {
         assert_eq!(result.insn_type[rec], Type::Int);
         assert_eq!(result.insn_type[mul], Type::Int);
     }
+
+    #[test]
+    fn test_fib() {
+        /*
+        fib(n)
+          if n < 2
+            return n
+          else
+            return fib(n-1) + fib(n-2)
+        */
+
+        /*
+        entry:
+            n = Param(0, fib)
+            lt = LessThan n, 2
+            IfTrue lt, early_exit, do_add
+        early_exit:
+            Return n
+        do_add:
+            sub1 = Add n, Const(-1)
+            rec1 = SendStatic fib, [ sub1 ]
+            sub2 = Add n, Const(-2)
+            rec2 = SendStatic fib, [ sub2 ]
+            add = Add rec1, rec2
+            Return add
+
+        ...
+
+        SendStatic fib, [ Const(100) ]
+        */
+        let (mut prog, _, entry_id) = prog_with_empty_fun();
+        let (fib_id, fib_entry) = prog.new_fun();
+        let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Const(Value::Int(100))] });
+        let n = prog.push_insn(fib_entry, Op::Param { idx: 0, parent_fun: fib_id });
+        let lt = prog.push_insn(fib_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
+        let early_exit_id = prog.new_block();
+        let do_add_id = prog.new_block();
+        prog.push_insn(fib_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_add_id });
+        prog.push_insn(early_exit_id, Op::Return { val: Opnd::Insn(n), parent_fun: fib_id });
+        let sub1 = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
+        let rec1 = prog.push_insn(do_add_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Insn(sub1)] });
+        let sub2 = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-2)) });
+        let rec2 = prog.push_insn(do_add_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Insn(sub2)] });
+        let add = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(rec1), v1: Opnd::Insn(rec2) });
+        prog.push_insn(do_add_id, Op::Return { val: Opnd::Insn(add), parent_fun: fib_id });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[outside_call], Type::Int);
+        assert_eq!(result.insn_type[n], Type::Int);
+        assert_eq!(result.insn_type[lt], Type::Bool);
+        assert_eq!(result.insn_type[sub1], Type::Int);
+        assert_eq!(result.insn_type[rec1], Type::Int);
+        assert_eq!(result.insn_type[sub2], Type::Int);
+        assert_eq!(result.insn_type[rec2], Type::Int);
+        assert_eq!(result.insn_type[add], Type::Int);
+    }
 }
