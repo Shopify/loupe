@@ -354,7 +354,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Add {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
-                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
+                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) =>
+                            match l.checked_add(r) {
+                                Some(result) => Type::Const(Value::Int(result)),
+                                _ => Type::Int,
+                            }
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
@@ -362,7 +366,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Mul {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
-                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l*r)),
+                        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) =>
+                            match l.checked_mul(r) {
+                                Some(result) => Type::Const(Value::Int(result)),
+                                _ => Type::Int,
+                            }
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
@@ -640,7 +648,7 @@ fn main()
 
 
 
-    let mut prog = gen_torture_test(5);
+    let mut prog = gen_torture_test(10_000);
 
     use std::time::Instant;
     let start_time = Instant::now();
@@ -664,8 +672,9 @@ fn main()
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
                 match ret_type {
+                    Type::Int => {}
                     Type::Const(_) => {}
-                    _ => panic!("output type should be a const int but got {ret_type:?}"),
+                    _ => panic!("output type should be an int but got {ret_type:?}"),
                 }
             }
         }
