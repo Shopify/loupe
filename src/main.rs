@@ -109,7 +109,7 @@ enum Type
 
 fn union(left: Type, right: Type) -> Type {
     match (left, right) {
-        (Type::Any, x) | (x, Type::Any) => Type::Any,
+        (Type::Any, _) | (_, Type::Any) => Type::Any,
         (Type::Empty, x) | (x, Type::Empty) => x,
         (l, r) if l == r => l,
         // Int
@@ -174,7 +174,7 @@ impl Program {
     }
 
     fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
-        let mut insn = &mut self.insns[insn_id] ;
+        let insn = &mut self.insns[insn_id] ;
         match insn {
             Insn { op: Op::Phi { ins } } => ins.push((block_id, opnd)),
             _ => panic!("Can't append phi arg to non-phi {:?}", insn)
@@ -346,7 +346,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             let new_value = match op {
                 Op::Add {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
-                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
+                        (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
@@ -354,7 +354,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Mul {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
-                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
+                        (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l*r)),
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
@@ -362,7 +362,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::LessThan {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
-                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
+                        (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
                         (l, r) if union(l, r) == Type::Int => Type::Bool,
                         _ => Type::Any,
@@ -787,7 +787,7 @@ mod sctp_tests {
     #[test]
     fn test_isnil_nil() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Nil) });
+        let isnil_id = prog.push_insn(block_id, Op::IsNil { v: NIL });
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[isnil_id], Type::Const(Value::Bool(true)));
     }
