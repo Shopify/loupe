@@ -624,23 +624,19 @@ fn main()
         }
     }
 
-
-
-    // FIXME: this should be int
+    // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
             if *parent_fun == prog.main {
                 let ret_type = result.insn_type[*ret_id];
                 println!("main return type: {:?}", ret_type);
 
-                //if ret_type != { panic!(); }
+                if ret_type != Type::Int {
+                    panic!("output type should be integer");
+                }
             }
         }
     }
-
-
-
-
 
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
