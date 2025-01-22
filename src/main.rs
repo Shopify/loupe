@@ -95,11 +95,10 @@ pub type BlockId = usize;
 pub type InsnId = usize;
 
 // Type: Int, Nil, Class
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Type
 {
     // Empty is the empty set (no info propagated yet or unreachable)
-    #[default]
     Empty,
     Const(Value),
     Int,
