@@ -1100,6 +1100,10 @@ mod sctp_tests {
         let add = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(rec1), v1: Opnd::Insn(rec2) });
         prog.push_insn(do_add_id, Op::Return { val: Opnd::Insn(add), parent_fun: fib_id });
         let result = sctp(&mut prog);
+        assert_eq!(result.block_executable[entry_id], true);
+        assert_eq!(result.block_executable[fib_entry], true);
+        assert_eq!(result.block_executable[early_exit_id], true);
+        assert_eq!(result.block_executable[do_add_id], true);
         assert_eq!(result.insn_type[outside_call], Type::Int);
         assert_eq!(result.insn_type[n], Type::Int);
         assert_eq!(result.insn_type[lt], Type::Bool);
