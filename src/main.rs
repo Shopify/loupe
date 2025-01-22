@@ -663,8 +663,9 @@ fn main()
                 let ret_type = result.insn_type[*ret_id];
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
-                if ret_type != Type::Int {
-                    panic!("output type should be integer");
+                match ret_type {
+                    Type::Const(_) => {}
+                    _ => panic!("output type should be a const int but got {ret_type:?}"),
                 }
             }
         }
