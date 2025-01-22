@@ -282,6 +282,7 @@ struct AnalysisResult {
 }
 
 // Sparse conditionall type propagation
+#[inline(never)]
 fn sctp(prog: &mut Program) -> AnalysisResult
 {
     let graph = compute_uses(prog);
@@ -421,6 +422,7 @@ struct CallGraph {
     flows_to: Vec<Vec<Opnd>>,
 }
 
+#[inline(never)]
 fn compute_uses(prog: &mut Program) -> CallGraph {
     // Map of functions to instructions that called them
     let num_funs = prog.funs.len();
@@ -527,6 +529,7 @@ fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: 
     callees
 }
 
+#[inline(never)]
 fn gen_torture_test(num_funs: usize) -> Program
 {
     let mut rng = LCG::new(1337);
