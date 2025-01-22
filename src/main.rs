@@ -328,6 +328,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             if let Op::IfTrue { val, then_block, else_block } = op {
                 match value_of(val) {
                     // TODO(max): What if val is Empty? Should we enqueue neither block?
+                    Type::Empty => {},
                     Type::Const(Value::Bool(false)) => block_worklist.push_back(*else_block),
                     Type::Const(Value::Bool(true)) => block_worklist.push_back(*then_block),
                     _ => {
