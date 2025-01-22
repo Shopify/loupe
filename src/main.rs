@@ -342,8 +342,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 continue;
             };
             if let Op::Return { val, parent_fun } = op {
-                // TODO(max): Should we instead be extending conditionally?
-                insn_worklist.extend(&graph.insn_uses[insn_id]);
+                for use_id in &graph.insn_uses[insn_id] {
+                    if is_insn_reachable(*use_id) {
+                        insn_worklist.push_back(*use_id);
+                    }
+                }
                 continue;
             };
             // Now handle expression-like instructions
@@ -1156,22 +1159,23 @@ mod sctp_tests {
                 phi [entry: 0, dead_block: 1337]
                 return phi;
         */
-        let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
-        let dead_block_id = prog.new_block(fun_id);
-        let phi_block_id = prog.new_block(fun_id);
-        let x = prog.push_insn(entry_id, Op::Param { idx: 0, parent_fun: fun_id });
-        prog.push_insn(entry_id, Op::Jump { target: phi_block_id });
+        let (mut prog, caller_fun_id, caller_entry_id) = prog_with_empty_fun();
+        let (callee_fun_id, callee_entry_id) = prog.new_fun();
+        let outside_call = prog.push_insn(caller_entry_id, Op::SendStatic { target: callee_fun_id, args: vec![Opnd::Const(Value::Int(100))] });
+        let dead_block_id = prog.new_block(callee_fun_id);
+        let phi_block_id = prog.new_block(callee_fun_id);
+        let x = prog.push_insn(callee_entry_id, Op::Param { idx: 0, parent_fun: callee_fun_id });
+        prog.push_insn(callee_entry_id, Op::Jump { target: phi_block_id });
 
         let t = prog.push_insn(dead_block_id, Op::Add { v0: Opnd::Insn(x), v1: Opnd::Const(Value::Int(1)) });
         let t2 = prog.push_insn(dead_block_id, Op::IsNil { v: Opnd::Insn(t) });
         prog.push_insn(dead_block_id, Op::IfTrue { val: Opnd::Insn(t2), then_block: phi_block_id, else_block: dead_block_id });
 
-        let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
-        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+        let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(callee_entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
+        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: callee_entry_id});
 
-        let (caller_id, caller_entry) = prog.new_fun();
-        let outside_call = prog.push_insn(caller_entry, Op::SendStatic { target: fun_id, args: vec![Opnd::Const(Value::Int(100))] });
         let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi], Type::Const(Value::Int(0)));
         assert_eq!(result.insn_type[outside_call], Type::Const(Value::Int(0)));
     }
 }
