@@ -440,6 +440,7 @@ struct CallGraph {
     called_by: Vec<Vec<InsnId>>,
     // Map of InsnId -> instructions that flow to that insn
     // For sends, it is only Return insns, and only their values; not the result of the Return
+    // TODO(max): Should this be a vec of Opnd?
     flows_to: Vec<Vec<InsnId>>,
 }
 
