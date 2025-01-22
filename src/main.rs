@@ -640,11 +640,7 @@ fn main()
     // 2. Get interprocedural analysis working with direct send (no classes, no native methods)
     // 3. Once confident that interprocedural analysis is working, then add classes and objects
 
-
-
-
-
-    let mut prog = gen_torture_test(10_000);
+    let mut prog = gen_torture_test(20_000);
 
     use std::time::Instant;
     let start_time = Instant::now();
