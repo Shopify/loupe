@@ -337,6 +337,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 continue;
             };
             if let Op::Return { val, parent_fun } = op {
+                if type_of(val) == Type::Empty { continue; }
                 for use_id in &graph.insn_uses[insn_id] {
                     if is_insn_reachable(*use_id) {
                         insn_worklist.push_back(*use_id);
