@@ -5,3 +5,18 @@ edition = "2021"
 rust-version = "1.58.0" # Minimally supported rust version
 
 [dependencies]
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+
+[profile.release]
+lto = "thin"
+opt-level = 3
+overflow-checks = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
