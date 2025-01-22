@@ -612,6 +612,20 @@ fn gen_torture_test(num_funs: usize) -> Program
     prog
 }
 
+fn print_prog(prog: &Program) {
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        let block_id = insn.block_id;
+        let fun_id = prog.blocks[block_id].fun_id;
+        if insn_id == prog.blocks[prog.funs[fun_id].entry_block].insns[0] {
+            println!("fun {fun_id:?}:");
+        }
+        if insn_id == prog.blocks[block_id].insns[0] {
+            println!("  block {block_id:?}:");
+        }
+        println!("    {insn_id}: {insn:?}");
+    }
+}
+
 fn main()
 {
     // TODO:
