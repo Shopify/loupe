@@ -555,7 +555,8 @@ fn gen_torture_test(num_funs: usize) -> Program
             let const_val = if rng.rand_bool() {
                 Value::Nil
             } else {
-                Value::Int(rng.rand_usize(0, 500) as i64)
+                let rand_int = rng.rand_usize(1, 500) as i64;
+                Value::Int(rand_int)
             };
 
             prog.push_insn(
