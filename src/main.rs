@@ -309,6 +309,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             itr_count += 1;
 
             let Insn {op} = &prog.insns[insn_id];
+            // println!("looking at: {op:?}");
+            // for (insn_id, insn) in prog.insns.iter().enumerate() {
+            //     println!("{insn_id}: [{:?}] {:?}", values[insn_id], insn);
+            // }
+            // println!("----------------------------------");
             let old_value = values[insn_id];
             let value_of = |opnd: &Opnd| -> Type {
                 match opnd {
@@ -333,23 +338,15 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 continue;
             };
             if let Op::Return { val, parent_fun } = op {
-                let arg_value = value_of(val);
-                for caller_insn in &graph.insn_uses[insn_id] {
-                    // TODO(max): Only take into account Returns coming from from reachable blocks
-                    let old_value = values[*caller_insn].clone();
-                    let new_value = union(old_value, arg_value);
-                    if new_value != old_value {
-                        println!("[{insn_id}] reflowing after return {val:?}");
-                        values[*caller_insn] = new_value;
-                        insn_worklist.extend(&graph.insn_uses[insn_id]);
-                    }
-                }
+                // TODO(max): Should we instead be extending conditionally?
+                insn_worklist.extend(&graph.insn_uses[insn_id]);
                 continue;
             };
             // Now handle expression-like instructions
             let new_value = match op {
                 Op::Add {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
+                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l+r)),
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
@@ -357,6 +354,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Mul {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
+                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Int(l*r)),
                         (l, r) if union(l, r) == Type::Int => Type::Int,
                         _ => Type::Any,
@@ -364,6 +362,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::LessThan {v0, v1} => {
                     match (value_of(v0), value_of(v1)) {
+                        (Type::Empty, x) | (x, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
                         (l, r) if union(l, r) == Type::Int => Type::Bool,
                         _ => Type::Any,
@@ -371,6 +370,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::IsNil { v } => {
                     match value_of(v) {
+                    Type::Empty => Type::Empty,
                         Type::Const(Value::Nil) => Type::Const(Value::Bool(true)),
                         Type::Const(_) | Type::Int | Type::Bool => Type::Const(Value::Bool(false)),
                         _ => Type::Bool,
@@ -383,30 +383,33 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::Param { idx, parent_fun } => {
                     let mut result = Type::Empty;
                     for caller_id in &graph.called_by[*parent_fun] {
-                        println!("called by {caller_id}");
                         match &prog.insns[*caller_id].op {
                             Op::SendStatic { target, args } => {
-                                println!("it's a send!");
                                 assert_eq!(*target, *parent_fun);
                                 let arg_type = if *idx < args.len() { value_of(&args[*idx]) } else { Type::Any };
-                                println!("it's a send with arg type {arg_type:?}!");
                                 result = union(result, arg_type);
                             }
                             _ => {}
                         }
                     }
-                    println!("...result is {:?}", result);
                     result
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
-                    // insn_worklist.extend(&prog.blocks[prog.funs[*target].entry_block].insns);
-                    Type::Empty  // This will get filled in by all Return instructions that could flow to it
+                    let mut result = Type::Empty;
+                    for return_id in graph.flows_to[insn_id].iter() {
+                        match &prog.insns[*return_id].op {
+                            Op::Return { val, parent_fun } => {
+                                result = union(result, value_of(&val));
+                            },
+                            op => panic!("only Return is expected to flow to sends. found {op:?}"),
+                        }
+                    }
+                    result
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(old_value, new_value) != old_value {
-                println!("saw a change; reflowing {insn_id}");
                 values[insn_id] = new_value;
                 insn_worklist.extend(&graph.insn_uses[insn_id]);
             }
@@ -435,6 +438,9 @@ struct CallGraph {
     insn_uses: Vec<Vec<InsnId>>,
     // Map of FunId -> Send instructions that call that fun
     called_by: Vec<Vec<InsnId>>,
+    // Map of InsnId -> instructions that flow to that insn
+    // For sends, it is only Return insns, and only their values; not the result of the Return
+    flows_to: Vec<Vec<InsnId>>,
 }
 
 fn compute_uses(prog: &mut Program) -> CallGraph {
@@ -446,7 +452,6 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
         let Insn { op, .. } = insn;
         match op {
             Op::SendStatic { target, args } => {
-                println!("insn {insn_id} calls fun {target}");
                 called_by[*target].insert(insn_id);
             }
             _ => {}
@@ -457,6 +462,9 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     let num_insns = prog.insns.len();
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
     uses.resize(num_insns, HashSet::new());
+    // Map of InsnId -> instructions that flow to that insn
+    let mut flows_to: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
+    flows_to.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let mut mark_use = |user: InsnId, opnd: &Opnd| {
             match opnd {
@@ -488,6 +496,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                 mark_use(insn_id, val);
                 for caller in &called_by[*parent_fun] {
                     mark_use(*caller, &Opnd::Insn(insn_id));
+                    flows_to[*caller].insert(insn_id);
                 }
             }
             Op::Param { idx, parent_fun } => {
@@ -504,6 +513,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
     CallGraph {
         insn_uses: uses.into_iter().map(|set| set.into_iter().collect()).collect(),
         called_by: called_by.into_iter().map(|set| set.into_iter().collect()).collect(),
+        flows_to: flows_to.into_iter().map(|set| set.into_iter().collect()).collect(),
     }
 }
 
@@ -992,7 +1002,7 @@ mod sctp_tests {
 
         /*
         entry:
-            n = Param(0)
+            n = Param(0, fact)
             lt = LessThan n, Const(2)
             IfTrue lt, early_exit, do_mul
         early_exit:
@@ -1002,25 +1012,30 @@ mod sctp_tests {
             rec = SendStatic fact, [ sub ]
             mul = Mul n, rec
             Return mul
+
+        ...
+
+        SendStatic fact, [ Const(5) ]
         */
         let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
-        let n = prog.push_insn(entry_id, Op::Param { idx: 0, parent_fun: fun_id });
-        let lt = prog.push_insn(entry_id, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
+        let (fact_id, fact_entry) = prog.new_fun();
+        let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Const(Value::Int(5))] });
+        let n = prog.push_insn(fact_entry, Op::Param { idx: 0, parent_fun: fact_id });
+        let lt = prog.push_insn(fact_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
         let early_exit_id = prog.new_block();
         let do_mul_id = prog.new_block();
-        prog.push_insn(entry_id, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_mul_id });
-        prog.push_insn(early_exit_id, Op::Return { val: ONE, parent_fun: fun_id });
+        prog.push_insn(fact_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_mul_id });
+        prog.push_insn(early_exit_id, Op::Return { val: ONE, parent_fun: fact_id });
         let sub = prog.push_insn(do_mul_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
-        let rec = prog.push_insn(do_mul_id, Op::SendStatic { target: fun_id, args: vec![Opnd::Insn(sub)] });
+        let rec = prog.push_insn(do_mul_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Insn(sub)] });
         let mul = prog.push_insn(do_mul_id, Op::Mul { v0: Opnd::Insn(n), v1: Opnd::Insn(rec) });
-        prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul), parent_fun: fun_id });
+        prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul), parent_fun: fact_id });
         let result = sctp(&mut prog);
-        for (insn_id, insn) in prog.insns.iter().enumerate() {
-            println!("{insn_id}: [{:?}] {:?}", result.insn_type[insn_id], insn);
-        }
         assert_eq!(result.block_executable[entry_id], true);
+        assert_eq!(result.block_executable[fact_entry], true);
         assert_eq!(result.block_executable[early_exit_id], true);
         assert_eq!(result.block_executable[do_mul_id], true);
+        assert_eq!(result.insn_type[outside_call], Type::Int);
         assert_eq!(result.insn_type[n], Type::Int);
         assert_eq!(result.insn_type[lt], Type::Bool);
         assert_eq!(result.insn_type[sub], Type::Int);
