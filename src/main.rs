@@ -675,31 +675,37 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize) -> Program
 
     // Generate a large number of classes
     let mut classes = Vec::new();
-    for i in 0..num_classes {
+    for _ in 0..num_classes {
         let class_id = prog.new_class();
         classes.push(class_id);
 
         // Create methods for this class
         for j in 0..METHODS_PER_CLASS {
-            let (m_id, entry_id) = prog.new_method(class_id, format!("m{}", j));
+            let (m_id, entry_block) = prog.new_method(class_id, format!("m{}", j));
 
-            // TODO
-
-
-
-            //let rand_int = rng.rand_usize(1, 500) as i64;
-            //Value::Int(rand_int)
-
-
-            /*
+            let const_val = Value::Int(rng.rand_usize(1, 500) as i64);
             prog.push_insn(
                 entry_block,
-                Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
+                Op::Return { val: Opnd::Const(const_val), parent_fun: m_id }
             );
-            */
-
-
         }
+    }
+
+    let (main_fun, main_entry) = prog.new_fun();
+    prog.main = main_fun;
+
+    // TODO: create one object of each class
+
+
+
+
+    // For each root/subgraph
+    for _ in 0..num_roots {
+
+
+
+
+
     }
 
 
