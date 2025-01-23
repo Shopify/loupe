@@ -64,16 +64,15 @@ impl LCG {
 }
 
 // Wait until we have interprocedural analysis working before introducing classes
-/*
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct Class {
-    name: String,
+    //name: String,
 
     // List of fields
-    fields: Vec<String>,
+    //ivars: Vec<String>,
 
     // Types associated with each field
-    field_types: Vec<Type>,
+    //ivar_types: Vec<Type>,
 
     // List of methods
     methods: HashMap<String, FunId>,
@@ -88,9 +87,9 @@ impl std::fmt::Display for ClassId {
         write!(f, "Class@{}", self.0)
     }
 }
-*/
 
-pub type ClassId = usize;
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct ClassId(usize);
 pub type FunId = usize;
 pub type BlockId = usize;
 pub type InsnId = usize;
@@ -130,6 +129,8 @@ fn union(left: &Type, right: &Type) -> Type {
 #[derive(Default, Debug)]
 struct Program
 {
+    classes: Vec<Class>,
+
     funs: Vec<Function>,
 
     blocks: Vec<Block>,
@@ -141,6 +142,15 @@ struct Program
 }
 
 impl Program {
+    // Register a class and assign it an id
+    pub fn new_class(&mut self) -> ClassId {
+        let id = self.classes.len();
+        self.classes.push(Class::default());
+        ClassId(id)
+    }
+
+    // TODO: new_method()
+
     // Register a function and assign it an id
     pub fn new_fun(&mut self) -> (FunId, BlockId) {
         let id = self.funs.len();
@@ -244,6 +254,9 @@ enum Op
     // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
     SendStatic { target: FunId, args: Vec<Opnd> },
+
+    // Dynamic dispatch to a method with a given name
+    SendDynamic { method: String, self_val: Opnd, args: Vec<Opnd> },
 
     // TODO: wait until we have the interprocedural analysis working before tackling this
     // Send with a dynamic name lookup on `self`
@@ -487,6 +500,9 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                 for opnd in args {
                     mark_use(insn_id, opnd);
                 }
+            }
+            Op::SendDynamic { .. } => {
+                todo!();
             }
             Op::Return { val, parent_fun } => {
                 mark_use(insn_id, val);
