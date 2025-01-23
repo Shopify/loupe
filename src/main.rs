@@ -258,10 +258,6 @@ enum Op
     // Dynamic dispatch to a method with a given name
     SendDynamic { method: String, self_val: Opnd, args: Vec<Opnd> },
 
-    // TODO: wait until we have the interprocedural analysis working before tackling this
-    // Send with a dynamic name lookup on `self`
-    //Send { target: FunId, self: Opnd, args: Vec<Opnd> },
-
     // The caller blocks this function can return to are stored
     // on the Function object this instruction belongs to
     Return { val: Opnd, parent_fun: FunId },
