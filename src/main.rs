@@ -112,6 +112,7 @@ impl Type {
     }
 
     fn objects(class_ids: &Vec<ClassId>) -> Type {
+        assert!(!class_ids.is_empty(), "Use Type::Empty instead");
         Type::Object(HashSet::from_iter(class_ids.iter().map(|id| *id)))
     }
 }
