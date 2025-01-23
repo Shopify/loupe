@@ -92,7 +92,8 @@ pub struct ClassId(usize);
 // TODO(max): Remove derive(Default) for FunId
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
 pub struct FunId(usize);
-pub type BlockId = usize;
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct BlockId(usize);
 pub type InsnId = usize;
 
 // Type: Int, Nil, Class
@@ -186,7 +187,7 @@ impl Program {
 
     // Register a block and assign it an id
     pub fn new_block(&mut self, fun_id: FunId) -> BlockId {
-        let id = self.blocks.len();
+        let id = BlockId(self.blocks.len());
         self.blocks.push(Block { fun_id, insns: vec![] });
         id
     }
@@ -202,7 +203,7 @@ impl Program {
         self.insns.push(insn);
 
         // Add the insn to the block
-        self.blocks[block].insns.push(id);
+        self.blocks[block.0].insns.push(id);
 
         id
     }
@@ -344,11 +345,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 
     // Mark entry as executable
     let entry = prog.funs[prog.main.0].entry_block;
-    executable[entry] = true;
+    executable[entry.0] = true;
 
     // Work list of instructions or blocks
     let mut block_worklist: VecDeque<BlockId> = VecDeque::new();
-    let mut insn_worklist: VecDeque<InsnId> = VecDeque::from(prog.blocks[entry].insns.clone());
+    let mut insn_worklist: VecDeque<InsnId> = VecDeque::from(prog.blocks[entry.0].insns.clone());
 
     let mut itr_count = 0;
 
@@ -366,7 +367,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
             };
             let is_insn_reachable = |insn_id: InsnId| -> bool {
-                executable[prog.insns[insn_id].block_id]
+                executable[prog.insns[insn_id].block_id.0]
             };
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
@@ -440,7 +441,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
-                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(&acc, &type_of(opnd)) } else { acc })
+                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
                     flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
@@ -451,7 +452,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     block_worklist.push_back(target_entry_id);
                     // First flow arguments to parameters
                     // NOTE: assumes all Param are in the first block of a function
-                    for target_insn in &prog.blocks[target_entry_id].insns {
+                    for target_insn in &prog.blocks[target_entry_id.0].insns {
                         // TODO(max): Should this instead modify the uses table?
                         match prog.insns[*target_insn].op {
                             Op::Param { idx, .. } => {
@@ -487,9 +488,9 @@ fn sctp(prog: &mut Program) -> AnalysisResult
         while let Some(block_id) = block_worklist.pop_front() {
             itr_count += 1;
 
-            if !executable[block_id] {
-                executable[block_id] = true;
-                insn_worklist.extend(&prog.blocks[block_id].insns);
+            if !executable[block_id.0] {
+                executable[block_id.0] = true;
+                insn_worklist.extend(&prog.blocks[block_id.0].insns);
             }
         }
     }
@@ -796,11 +797,11 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let block_id = insn.block_id;
-        let fun_id = prog.blocks[block_id].fun_id;
-        if insn_id == prog.blocks[prog.funs[fun_id.0].entry_block].insns[0] {
+        let fun_id = prog.blocks[block_id.0].fun_id;
+        if insn_id == prog.blocks[prog.funs[fun_id.0].entry_block.0].insns[0] {
             println!("fun {fun_id:?}:");
         }
-        if insn_id == prog.blocks[block_id].insns[0] {
+        if insn_id == prog.blocks[block_id.0].insns[0] {
             println!("  block {block_id:?}:");
         }
         match result {
@@ -840,7 +841,7 @@ fn main()
     // Check that all functions marked executable
     for fun in &prog.funs {
         let entry_id = fun.entry_block;
-        if !result.block_executable[entry_id] {
+        if !result.block_executable[entry_id.0] {
             panic!("all function entry blocks should be executable");
         }
     }
