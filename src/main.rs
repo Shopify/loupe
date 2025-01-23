@@ -694,19 +694,30 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize) -> Program
     let (main_fun, main_entry) = prog.new_fun();
     prog.main = main_fun;
 
-    // TODO: create one object of each class
 
+
+    // TODO:
+    // Create one object of each class
+    //let mut objects = Vec::new();
+    for class_id in classes {
+
+
+    }
 
 
 
     // For each root/subgraph
     for _ in 0..num_roots {
 
+        // TODO: most dags should be monomorphic? sizes should skew small, max 4 80% of the time
 
+
+        // TODO: start with just a single function for the first iteration of this
 
 
 
     }
+
 
 
 
