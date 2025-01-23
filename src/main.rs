@@ -63,7 +63,6 @@ impl LCG {
     }
 }
 
-// Wait until we have interprocedural analysis working before introducing classes
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct Class {
     //name: String,
