@@ -94,7 +94,14 @@ pub struct ClassId(usize);
 pub struct FunId(usize);
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BlockId(usize);
-pub type InsnId = usize;
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct InsnId(usize);
+
+impl std::fmt::Display for InsnId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "v{}", self.0)
+    }
+}
 
 // Type: Int, Nil, Class
 #[derive(Debug, Clone, PartialEq)]
@@ -199,7 +206,7 @@ impl Program {
             op,
         };
 
-        let id = self.insns.len();
+        let id = InsnId(self.insns.len());
         self.insns.push(insn);
 
         // Add the insn to the block
@@ -209,7 +216,7 @@ impl Program {
     }
 
     fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
-        let insn = &mut self.insns[insn_id] ;
+        let insn = &mut self.insns[insn_id.0];
         match insn {
             Insn { op: Op::Phi { ins }, .. } => ins.push((block_id, opnd)),
             _ => panic!("Can't append phi arg to non-phi {:?}", insn)
@@ -358,16 +365,16 @@ fn sctp(prog: &mut Program) -> AnalysisResult
         while let Some(insn_id) = insn_worklist.pop_front() {
             itr_count += 1;
 
-            let Insn {op, ..} = &prog.insns[insn_id];
-            let old_type = &types[insn_id];
+            let Insn {op, ..} = &prog.insns[insn_id.0];
+            let old_type = &types[insn_id.0];
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
-                    Opnd::Insn(insn_id) => types[*insn_id].clone(),
+                    Opnd::Insn(insn_id) => types[insn_id.0].clone(),
                 }
             };
             let is_insn_reachable = |insn_id: InsnId| -> bool {
-                executable[prog.insns[insn_id].block_id.0]
+                executable[prog.insns[insn_id.0].block_id.0]
             };
             // Handle control instructions first; they do not have a value
             if let Op::IfTrue { val, then_block, else_block } = op {
@@ -389,8 +396,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             if let Op::Return { val, parent_fun } = op {
                 if type_of(val) == Type::Empty { continue; }
                 for send_insn in &called_by[parent_fun.0] {
-                    flows_to[*send_insn].insert(*val);
-                    let old_type = &types[*send_insn];
+                    flows_to[send_insn.0].insert(*val);
+                    let old_type = &types[send_insn.0];
                     if union(old_type, &type_of(&val)) != *old_type {
                         insn_worklist.push_back(*send_insn);
                     }
@@ -444,7 +451,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
-                    flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                    flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
                     called_by[target.0].insert(insn_id);
@@ -454,15 +461,15 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     // NOTE: assumes all Param are in the first block of a function
                     for target_insn in &prog.blocks[target_entry_id.0].insns {
                         // TODO(max): Should this instead modify the uses table?
-                        match prog.insns[*target_insn].op {
+                        match prog.insns[target_insn.0].op {
                             Op::Param { idx, .. } => {
                                 // TODO(max): Handle OOB arguments
                                 if idx < args.len() {
                                     let arg = args[idx];
                                     let arg_type = type_of(&arg);
-                                    let old_type = &types[*target_insn];
+                                    let old_type = &types[target_insn.0];
                                     if union(old_type, &arg_type) != *old_type {
-                                        flows_to[*target_insn].insert(args[idx]);
+                                        flows_to[target_insn.0].insert(args[idx]);
                                         insn_worklist.push_back(*target_insn);
                                     }
                                 }
@@ -470,14 +477,14 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                             _ => {}
                         }
                     }
-                    flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                    flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::New { class } => Type::object(*class),
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(&old_type, &new_type) != *old_type {
-                types[insn_id] = new_type;
-                for use_id in &insn_uses[insn_id] {
+                types[insn_id.0] = new_type;
+                for use_id in &insn_uses[insn_id.0] {
                     if is_insn_reachable(*use_id) {
                         insn_worklist.push_back(*use_id);
                     }
@@ -512,10 +519,11 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
     uses.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
+        let insn_id = InsnId(insn_id);
         let mut mark_use = |user: InsnId, opnd: &Opnd| {
             match opnd {
                 Opnd::Insn(used) => {
-                    uses[*used].insert(user);
+                    uses[used.0].insert(user);
                 }
                 _ => {}
             }
@@ -796,6 +804,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
 fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
     for (insn_id, insn) in prog.insns.iter().enumerate() {
+        let insn_id = InsnId(insn_id);
         let block_id = insn.block_id;
         let fun_id = prog.blocks[block_id.0].fun_id;
         if insn_id == prog.blocks[prog.funs[fun_id.0].entry_block.0].insns[0] {
@@ -806,7 +815,7 @@ fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
         }
         match result {
             Some(ref result) => {
-                let ty = &result.insn_type[insn_id];
+                let ty = &result.insn_type[insn_id.0];
                 println!("    {insn_id}:{ty:?} = {insn:?}");
             }
             None => {
@@ -850,7 +859,7 @@ fn main()
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
             if *parent_fun == prog.main {
-                let ret_type = &result.insn_type[*ret_id];
+                let ret_type = &result.insn_type[ret_id.0];
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
                 match ret_type {
