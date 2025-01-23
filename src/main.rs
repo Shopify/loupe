@@ -149,7 +149,18 @@ impl Program {
         ClassId(id)
     }
 
-    // TODO: new_method()
+    // Register a method associated with a class
+    pub fn new_method(&mut self, class_id: ClassId, name: String) -> (FunId, BlockId) {
+        let (m_id, b_id) = self.new_fun();
+
+        // Register the method with the given class
+        let k = &mut self.classes[class_id.0];
+        assert!(!k.methods.contains_key(&name));
+        k.methods.insert(name, m_id);
+
+        // Return method id and entry block id
+        (m_id, b_id)
+    }
 
     // Register a function and assign it an id
     pub fn new_fun(&mut self) -> (FunId, BlockId) {
