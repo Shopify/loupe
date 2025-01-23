@@ -95,7 +95,7 @@ pub type BlockId = usize;
 pub type InsnId = usize;
 
 // Type: Int, Nil, Class
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Type
 {
     // Empty is the empty set (no info propagated yet or unreachable)
@@ -106,11 +106,11 @@ enum Type
     Any,
 }
 
-fn union(left: Type, right: Type) -> Type {
+fn union(left: &Type, right: &Type) -> Type {
     match (left, right) {
         (Type::Any, _) | (_, Type::Any) => Type::Any,
-        (Type::Empty, x) | (x, Type::Empty) => x,
-        (l, r) if l == r => l,
+        (Type::Empty, x) | (x, Type::Empty) => x.clone(),
+        (l, r) if l == r => l.clone(),
         // Int
         (Type::Int, Type::Const(Value::Int(_))) | (Type::Const(Value::Int(_)), Type::Int) => Type::Int,
         (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => Type::Int,
@@ -309,11 +309,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             itr_count += 1;
 
             let Insn {op, ..} = &prog.insns[insn_id];
-            let old_value = types[insn_id];
+            let old_value = &types[insn_id];
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
-                    Opnd::Insn(insn_id) => types[*insn_id],
+                    Opnd::Insn(insn_id) => types[*insn_id].clone(),
                 }
             };
             let is_insn_reachable = |insn_id: InsnId| -> bool {
@@ -355,7 +355,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                                 Some(result) => Type::Const(Value::Int(result)),
                                 _ => Type::Int,
                             }
-                        (l, r) if union(l, r) == Type::Int => Type::Int,
+                        (l, r) if union(&l, &r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
                 }
@@ -367,7 +367,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                                 Some(result) => Type::Const(Value::Int(result)),
                                 _ => Type::Int,
                             }
-                        (l, r) if union(l, r) == Type::Int => Type::Int,
+                        (l, r) if union(&l, &r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
                 }
@@ -375,7 +375,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
-                        (l, r) if union(l, r) == Type::Int => Type::Bool,
+                        (l, r) if union(&l, &r) == Type::Int => Type::Bool,
                         _ => Type::Any,
                     }
                 }
@@ -389,18 +389,18 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
-                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(acc, type_of(opnd)) } else { acc })
+                    ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, type_of(opnd)))
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
                     block_worklist.push_back(prog.funs[*target].entry_block);
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(acc, type_of(opnd)))
+                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
-            if union(old_value, new_value) != old_value {
+            if union(&old_value, &new_value) != *old_value {
                 types[insn_id] = new_value;
                 for use_id in &graph.insn_uses[insn_id] {
                     if is_insn_reachable(*use_id) {
@@ -660,7 +660,7 @@ fn main()
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
             if *parent_fun == prog.main {
-                let ret_type = result.insn_type[*ret_id];
+                let ret_type = &result.insn_type[*ret_id];
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
                 match ret_type {
@@ -682,42 +682,42 @@ mod union_tests {
 
     #[test]
     fn test_any() {
-        assert_eq!(union(Type::Any, Type::Any), Type::Any);
-        assert_eq!(union(Type::Any, Type::Int), Type::Any);
-        assert_eq!(union(Type::Any, Type::Empty), Type::Any);
-        assert_eq!(union(Type::Any, Type::Int), Type::Any);
-        assert_eq!(union(Type::Any, Type::Bool), Type::Any);
-        assert_eq!(union(Type::Any, Type::Const(Value::Int(5))), Type::Any);
-        assert_eq!(union(Type::Any, Type::Const(Value::Bool(true))), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Any), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Int), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Empty), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Int), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Bool), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Const(Value::Int(5))), Type::Any);
+        assert_eq!(union(&Type::Any, &Type::Const(Value::Bool(true))), Type::Any);
     }
 
     #[test]
     fn test_empty() {
-        assert_eq!(union(Type::Empty, Type::Any), Type::Any);
-        assert_eq!(union(Type::Empty, Type::Int), Type::Int);
-        assert_eq!(union(Type::Empty, Type::Empty), Type::Empty);
-        assert_eq!(union(Type::Empty, Type::Const(Value::Int(5))), Type::Const(Value::Int(5)));
-        assert_eq!(union(Type::Empty, Type::Int), Type::Int);
-        assert_eq!(union(Type::Empty, Type::Bool), Type::Bool);
-        assert_eq!(union(Type::Empty, Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
+        assert_eq!(union(&Type::Empty, &Type::Any), Type::Any);
+        assert_eq!(union(&Type::Empty, &Type::Int), Type::Int);
+        assert_eq!(union(&Type::Empty, &Type::Empty), Type::Empty);
+        assert_eq!(union(&Type::Empty, &Type::Const(Value::Int(5))), Type::Const(Value::Int(5)));
+        assert_eq!(union(&Type::Empty, &Type::Int), Type::Int);
+        assert_eq!(union(&Type::Empty, &Type::Bool), Type::Bool);
+        assert_eq!(union(&Type::Empty, &Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
     }
 
     #[test]
     fn test_const() {
-        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(3))), Type::Const(Value::Int(3)));
-        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
-        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Bool(true))), Type::Any);
+        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Int(3))), Type::Const(Value::Int(3)));
+        assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
+        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Bool(true))), Type::Any);
     }
 
     #[test]
     fn test_type() {
-        assert_eq!(union(Type::Const(Value::Int(3)), Type::Const(Value::Int(4))), Type::Int);
-        assert_eq!(union(Type::Const(Value::Int(3)), Type::Int), Type::Int);
+        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Int(4))), Type::Int);
+        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Int), Type::Int);
 
-        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Const(Value::Bool(false))), Type::Bool);
-        assert_eq!(union(Type::Const(Value::Bool(true)), Type::Bool), Type::Bool);
+        assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Const(Value::Bool(false))), Type::Bool);
+        assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Bool), Type::Bool);
 
-        assert_eq!(union(Type::Int, Type::Bool), Type::Any);
+        assert_eq!(union(&Type::Int, &Type::Bool), Type::Any);
     }
 }
 
