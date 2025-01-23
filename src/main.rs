@@ -90,6 +90,7 @@ impl std::fmt::Display for ClassId {
 }
 */
 
+pub type ClassId = usize;
 pub type FunId = usize;
 pub type BlockId = usize;
 pub type InsnId = usize;
@@ -103,6 +104,7 @@ enum Type
     Const(Value),
     Int,
     Bool,
+    Object(HashSet<ClassId>),
     Any,
 }
 
