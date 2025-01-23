@@ -107,6 +107,16 @@ enum Type
     Any,
 }
 
+impl Type {
+    fn object(class_id: ClassId) -> Type {
+        Type::Object(HashSet::from([class_id]))
+    }
+
+    fn objects(class_ids: &Vec<ClassId>) -> Type {
+        Type::Object(HashSet::from_iter(class_ids.iter().map(|id| *id)))
+    }
+}
+
 fn union(left: &Type, right: &Type) -> Type {
     match (left, right) {
         (Type::Any, _) | (_, Type::Any) => Type::Any,
@@ -120,6 +130,8 @@ fn union(left: &Type, right: &Type) -> Type {
         (Type::Bool, Type::Const(Value::Bool(_))) | (Type::Const(Value::Bool(_)), Type::Bool) => Type::Bool,
         (Type::Const(Value::Bool(_)), Type::Const(Value::Bool(_))) => Type::Bool,
         (Type::Bool, Type::Bool) => Type::Bool,
+        // Object
+        (Type::Object(l), Type::Object(r)) => Type::Object(l.union(r).map(|item| *item).collect()),
         // Other
         _ => Type::Any,
     }
@@ -743,6 +755,17 @@ mod union_tests {
         assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Bool), Type::Bool);
 
         assert_eq!(union(&Type::Int, &Type::Bool), Type::Any);
+    }
+
+    #[test]
+    fn test_object() {
+        assert_eq!(union(&Type::object(ClassId(3)), &Type::Empty), Type::object(ClassId(3)));
+        assert_eq!(union(&Type::object(ClassId(3)), &Type::object(ClassId(4))),
+                   Type::objects(&vec![ClassId(3), ClassId(4)]));
+        assert_eq!(union(&Type::objects(&vec![ClassId(3), ClassId(4)]), &Type::object(ClassId(5))),
+                   Type::objects(&vec![ClassId(3), ClassId(4), ClassId(5)]));
+        assert_eq!(union(&Type::object(ClassId(5)), &Type::objects(&vec![ClassId(3), ClassId(4)])),
+                   Type::objects(&vec![ClassId(3), ClassId(4), ClassId(5)]));
     }
 }
 
