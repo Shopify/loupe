@@ -809,7 +809,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     prog
 }
 
-fn print_prog(prog: &Program) {
+fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let block_id = insn.block_id;
         let fun_id = prog.blocks[block_id].fun_id;
@@ -819,7 +819,15 @@ fn print_prog(prog: &Program) {
         if insn_id == prog.blocks[block_id].insns[0] {
             println!("  block {block_id:?}:");
         }
-        println!("    {insn_id}: {insn:?}");
+        match result {
+            Some(ref result) => {
+                let ty = &result.insn_type[insn_id];
+                println!("    {insn_id}:{ty:?} = {insn:?}");
+            }
+            None => {
+                println!("    {insn_id}: {insn:?}");
+            }
+        }
     }
 }
 
