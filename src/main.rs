@@ -356,7 +356,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             itr_count += 1;
 
             let Insn {op, ..} = &prog.insns[insn_id];
-            let old_value = &types[insn_id];
+            let old_type = &types[insn_id];
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
@@ -395,7 +395,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 continue;
             };
             // Now handle expression-like instructions
-            let new_value = match op {
+            let new_type = match op {
                 Op::Add {v0, v1} => {
                     match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
@@ -472,8 +472,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                 Op::New { class } => Type::object(*class),
                 _ => todo!("op not yet supported {:?}", op),
             };
-            if union(&old_value, &new_value) != *old_value {
-                types[insn_id] = new_value;
+            if union(&old_type, &new_type) != *old_type {
+                types[insn_id] = new_type;
                 for use_id in &insn_uses[insn_id] {
                     if is_insn_reachable(*use_id) {
                         insn_worklist.push_back(*use_id);
