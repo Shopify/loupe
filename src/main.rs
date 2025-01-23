@@ -657,7 +657,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 }
 
 #[inline(never)]
-fn gen_torture_test_2(num_classes: usize, num_roots: usize) -> Program
+fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> Program
 {
     const METHODS_PER_CLASS: usize = 10;
 
@@ -689,31 +689,113 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize) -> Program
     let (main_fun, main_entry) = prog.new_fun();
     prog.main = main_fun;
 
-
-
-    // TODO:
-    // Create one object of each class
-    //let mut objects = Vec::new();
+    // Create one instance of each class
+    let mut objects = Vec::new();
     for class_id in classes {
-
-
+        let obj = prog.push_insn(
+            main_entry,
+            Op::New { class: class_id }
+        );
+        objects.push(obj);
     }
-
-
 
     // For each root/subgraph
     for _ in 0..num_roots {
 
-        // TODO: most dags should be monomorphic? sizes should skew small, max 4 80% of the time
+        // Generate a random call graph
+        //let callees = random_dag(&mut rng, dag_size, 1, 10);
 
 
-        // TODO: start with just a single function for the first iteration of this
 
 
 
+
+
+        let (fun_id, entry_block) = prog.new_fun();
+        let param_id = prog.push_insn(entry_block, Op::Param { idx: 0, parent_fun: fun_id });
+        // TODO: map function ids in the dag
+
+        // Call a random method
+        let m_no = rng.rand_usize(0, METHODS_PER_CLASS - 1);
+        let m_name = format!("m{}", m_no);
+        let call_insn = prog.push_insn(
+            entry_block,
+            Op::SendDynamic { method: m_name, self_val: Opnd::Insn(param_id) , args: vec![] }
+        );
+
+        // Return the value produced
+        prog.push_insn(
+            entry_block,
+            Op::Return { val: Opnd::Insn(call_insn), parent_fun: fun_id }
+        );
+
+
+
+
+        /*
+        // List of callees for this function
+        let callees = &callees[fun_id];
+
+        let mut last_block = entry_block;
+        let mut sum_val = ZERO;
+
+        // Call the callees and do nothing with the return value for now
+        for callee_id in callees {
+            let nil_block = prog.new_block(fun_id);
+            let int_block = prog.new_block(fun_id);
+            let sum_block = prog.new_block(fun_id);
+
+            let call_insn = prog.push_insn(
+                last_block,
+                Op::SendStatic { target: *callee_id, args: vec![] }
+            );
+            let isnil_insn = prog.push_insn(last_block, Op::IsNil { v: Opnd::Insn(call_insn) });
+            prog.push_insn(last_block, Op::IfTrue { val: Opnd::Insn(isnil_insn), then_block: nil_block, else_block: int_block });
+
+            // Both branches go to the sum block
+            prog.push_insn(nil_block, Op::Jump { target: sum_block });
+            prog.push_insn(int_block, Op::Jump { target: sum_block });
+
+            // Compute the sum
+            let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
+            let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
+            sum_val = Opnd::Insn(add_id);
+        }
+
+        prog.push_insn(
+            last_block,
+            Op::Return { val: sum_val, parent_fun: fun_id }
+        );
+        */
+
+
+
+
+        // In practice, most call sites are monomorphic.
+        // Sizes should skew small 80% of the time, with a smaller
+        // probability of encountering megamorphic call sites
+        let num_classes = if rng.pct_prob(80) {
+            rng.rand_usize(1, 3)
+        } else {
+            rng.rand_usize(1, 50)
+        };
+
+        println!("num_classes: {}", num_classes);
+
+        // Randomly select class instances
+        let mut objs = HashSet::new();
+        while objs.len() < num_classes {
+            objs.insert(rng.choice(&objects));
+        }
+
+        // Call the new function with each class instance
+        for obj in objs {
+            let obj = prog.push_insn(
+                main_entry,
+                Op::SendStatic { target: fun_id, args: vec![Opnd::Insn(*obj)] }
+            );
+        }
     }
-
-
 
 
 
@@ -747,6 +829,13 @@ fn main()
     // 1. Start with intraprocedural analysis
     // 2. Get interprocedural analysis working with direct send (no classes, no native methods)
     // 3. Once confident that interprocedural analysis is working, then add classes and objects
+
+
+
+    // Only checking that the construction works for now
+    let prog = gen_torture_test_2(5_000, 50, 200);
+
+
 
     let mut prog = gen_torture_test(20_000);
 
@@ -782,6 +871,12 @@ fn main()
 
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
+
+
+
+
+
+
 }
 
 #[cfg(test)]
