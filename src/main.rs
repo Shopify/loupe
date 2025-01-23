@@ -661,6 +661,60 @@ fn gen_torture_test(num_funs: usize) -> Program
     prog
 }
 
+#[inline(never)]
+fn gen_torture_test_2(num_classes: usize, num_roots: usize) -> Program
+{
+    const METHODS_PER_CLASS: usize = 10;
+
+    let mut rng = LCG::new(1337);
+
+    //let callees = random_dag(&mut rng, num_funs, 1, 10);
+    //assert!(callees[0].len() > 0);
+
+    let mut prog = Program::default();
+
+    // Generate a large number of classes
+    let mut classes = Vec::new();
+    for i in 0..num_classes {
+        let class_id = prog.new_class();
+        classes.push(class_id);
+
+        // Create methods for this class
+        for j in 0..METHODS_PER_CLASS {
+            let (m_id, entry_id) = prog.new_method(class_id, format!("m{}", j));
+
+            // TODO
+
+
+
+            //let rand_int = rng.rand_usize(1, 500) as i64;
+            //Value::Int(rand_int)
+
+
+            /*
+            prog.push_insn(
+                entry_block,
+                Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
+            );
+            */
+
+
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+    prog
+}
+
 fn print_prog(prog: &Program) {
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let block_id = insn.block_id;
