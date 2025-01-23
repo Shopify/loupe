@@ -89,7 +89,9 @@ impl std::fmt::Display for ClassId {
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct ClassId(usize);
-pub type FunId = usize;
+// TODO(max): Remove derive(Default) for FunId
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+pub struct FunId(usize);
 pub type BlockId = usize;
 pub type InsnId = usize;
 
@@ -176,7 +178,7 @@ impl Program {
 
     // Register a function and assign it an id
     pub fn new_fun(&mut self) -> (FunId, BlockId) {
-        let id = self.funs.len();
+        let id = FunId(self.funs.len());
         let entry_block = self.new_block(id);
         self.funs.push(Function { entry_block });
         (id, entry_block)
@@ -341,7 +343,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     flows_to.resize(num_insns, HashSet::new());
 
     // Mark entry as executable
-    let entry = prog.funs[prog.main].entry_block;
+    let entry = prog.funs[prog.main.0].entry_block;
     executable[entry] = true;
 
     // Work list of instructions or blocks
@@ -385,7 +387,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             if let Op::Return { val, parent_fun } = op {
                 if type_of(val) == Type::Empty { continue; }
-                for send_insn in &called_by[*parent_fun] {
+                for send_insn in &called_by[parent_fun.0] {
                     flows_to[*send_insn].insert(*val);
                     let old_type = &types[*send_insn];
                     if union(old_type, &type_of(&val)) != *old_type {
@@ -444,8 +446,8 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
-                    called_by[*target].insert(insn_id);
-                    let target_entry_id = prog.funs[*target].entry_block;
+                    called_by[target.0].insert(insn_id);
+                    let target_entry_id = prog.funs[target.0].entry_block;
                     block_worklist.push_back(target_entry_id);
                     // First flow arguments to parameters
                     // NOTE: assumes all Param are in the first block of a function
@@ -558,7 +560,7 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
 // Generate a random acyclic call graph
 fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<Vec<usize>>
 {
-    let mut callees: Vec<Vec<FunId>> = Vec::new();
+    let mut callees: Vec<Vec<usize>> = Vec::new();
 
     callees.resize(num_nodes, Vec::default());
 
@@ -591,15 +593,16 @@ fn gen_torture_test(num_funs: usize) -> Program
     let mut prog = Program::default();
 
     // The first function is the root node of the graph
-    prog.main = 0;
+    prog.main = FunId(0);
 
     // For each function to be generated
     for fun_id in 0..num_funs {
+        let fun_id = FunId(fun_id);
         let (f_id, entry_block) = prog.new_fun();
         assert!(f_id == fun_id);
 
          // List of callees for this function
-        let callees = &callees[fun_id];
+        let callees = &callees[fun_id.0];
 
         // If this is a leaf method
         if callees.is_empty() {
@@ -631,7 +634,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 
                 let call_insn = prog.push_insn(
                     last_block,
-                    Op::SendStatic { target: *callee_id, args: vec![] }
+                    Op::SendStatic { target: FunId(*callee_id), args: vec![] }
                 );
                 let isnil_insn = prog.push_insn(last_block, Op::IsNil { v: Opnd::Insn(call_insn) });
                 prog.push_insn(last_block, Op::IfTrue { val: Opnd::Insn(isnil_insn), then_block: nil_block, else_block: int_block });
@@ -794,7 +797,7 @@ fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let block_id = insn.block_id;
         let fun_id = prog.blocks[block_id].fun_id;
-        if insn_id == prog.blocks[prog.funs[fun_id].entry_block].insns[0] {
+        if insn_id == prog.blocks[prog.funs[fun_id.0].entry_block].insns[0] {
             println!("fun {fun_id:?}:");
         }
         if insn_id == prog.blocks[block_id].insns[0] {
@@ -930,7 +933,7 @@ mod compute_uses_tests {
 
     fn prog_with_empty_fun() -> (Program, FunId, BlockId) {
         let mut prog = Program::default();
-        prog.main = 0;
+        prog.main = FunId(0);
         let (fun_id, block_id) = prog.new_fun();
         (prog, fun_id, block_id)
     }
@@ -993,7 +996,7 @@ mod sctp_tests {
 
     fn prog_with_empty_fun() -> (Program, FunId, BlockId) {
         let mut prog = Program::default();
-        prog.main = 0;
+        prog.main = FunId(0);
         let (fun_id, block_id) = prog.new_fun();
         (prog, fun_id, block_id)
     }
@@ -1356,7 +1359,7 @@ mod sctp_tests {
         prog.push_insn(dead_block_id, Op::IfTrue { val: Opnd::Insn(t2), then_block: phi_block_id, else_block: dead_block_id });
 
         let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(callee_entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
-        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: callee_entry_id});
+        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: callee_fun_id });
 
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi], Type::Const(Value::Int(0)));
