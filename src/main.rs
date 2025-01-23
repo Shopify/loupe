@@ -212,6 +212,10 @@ impl Program {
             _ => panic!("Can't append phi arg to non-phi {:?}", insn)
         }
     }
+
+    fn lookup_method(&self, class_id: ClassId, method_name: &String) -> Option<FunId> {
+        self.classes[class_id.0].methods.get(method_name).copied()
+    }
 }
 
 #[derive(Debug)]
@@ -429,6 +433,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
+                    // TODO(max): Flow from SendDynamic
                     graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
@@ -436,6 +441,29 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::New { class } => Type::object(*class),
+
+                Op::SendDynamic { method, self_val, args } => {
+                    match type_of(self_val) {
+                        Type::Empty => Type::Empty,
+                        Type::Object(class_ids) => {
+                            let targets = class_ids.iter().filter_map(|class_id| prog.lookup_method(*class_id, method));
+                            let mut result = Type::Empty;
+                            for target in targets {
+                                block_worklist.push_back(prog.funs[target].entry_block);
+                                for return_insn_id in idk_get_returns[target] {
+                                    match prog.insns[return_insn_id].op {
+                                        Op::Return { val, .. } => {
+                                            result = union(&result, &type_of(&val));
+                                        }
+                                        op => panic!("expected return but found {op:?}")
+                                    }
+                                }
+                            }
+                            result
+                        }
+                        _ => todo!(),
+                    }
+                }
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(&old_value, &new_value) != *old_value {
