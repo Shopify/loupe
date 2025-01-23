@@ -247,7 +247,7 @@ pub enum Value {
     Fun(FunId),
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Opnd {
     // Constant
     Const(Value),
@@ -321,7 +321,7 @@ struct AnalysisResult {
 #[inline(never)]
 fn sctp(prog: &mut Program) -> AnalysisResult
 {
-    let graph = compute_uses(prog);
+    let insn_uses = compute_uses(prog);
     let num_blocks = prog.blocks.len();
     let mut executable: Vec<bool> = Vec::with_capacity(num_blocks);
     executable.resize(num_blocks, false);
@@ -329,6 +329,16 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     let num_insns = prog.insns.len();
     let mut types: Vec<Type> = Vec::with_capacity(num_insns);
     types.resize(num_insns, Type::Empty);
+
+    // Map of functions to instructions that called them
+    let num_funs = prog.funs.len();
+    let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
+    called_by.resize(num_funs, HashSet::new());
+
+    // Map of InsnId -> operands that flow to that insn
+    // Flow goes from send arguments to function parameters and from return values to send results
+    let mut flows_to: Vec<HashSet<Opnd>> = Vec::with_capacity(num_insns);
+    flows_to.resize(num_insns, HashSet::new());
 
     // Mark entry as executable
     let entry = prog.funs[prog.main].entry_block;
@@ -375,9 +385,11 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             };
             if let Op::Return { val, parent_fun } = op {
                 if type_of(val) == Type::Empty { continue; }
-                for use_id in &graph.insn_uses[insn_id] {
-                    if is_insn_reachable(*use_id) {
-                        insn_worklist.push_back(*use_id);
+                for send_insn in &called_by[*parent_fun] {
+                    flows_to[*send_insn].insert(*val);
+                    let old_type = &types[*send_insn];
+                    if union(old_type, &type_of(&val)) != *old_type {
+                        insn_worklist.push_back(*send_insn);
                     }
                 }
                 continue;
@@ -429,18 +441,40 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[*block_id] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                    flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
-                    block_worklist.push_back(prog.funs[*target].entry_block);
-                    graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                    called_by[*target].insert(insn_id);
+                    let target_entry_id = prog.funs[*target].entry_block;
+                    block_worklist.push_back(target_entry_id);
+                    // First flow arguments to parameters
+                    // NOTE: assumes all Param are in the first block of a function
+                    for target_insn in &prog.blocks[target_entry_id].insns {
+                        // TODO(max): Should this instead modify the uses table?
+                        match prog.insns[*target_insn].op {
+                            Op::Param { idx, .. } => {
+                                // TODO(max): Handle OOB arguments
+                                if idx < args.len() {
+                                    let arg = args[idx];
+                                    let arg_type = type_of(&arg);
+                                    let old_type = &types[*target_insn];
+                                    if union(old_type, &arg_type) != *old_type {
+                                        flows_to[*target_insn].insert(args[idx]);
+                                        insn_worklist.push_back(*target_insn);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::New { class } => Type::object(*class),
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(&old_value, &new_value) != *old_value {
                 types[insn_id] = new_value;
-                for use_id in &graph.insn_uses[insn_id] {
+                for use_id in &insn_uses[insn_id] {
                     if is_insn_reachable(*use_id) {
                         insn_worklist.push_back(*use_id);
                     }
@@ -461,42 +495,19 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     AnalysisResult {
         block_executable: executable,
         insn_type: types,
-        insn_uses: graph.insn_uses,
+        insn_uses,
         itr_count
     }
 }
 
-struct CallGraph {
-    // Map of InsnId -> instructions that use that insn
-    insn_uses: Vec<Vec<InsnId>>,
-    // Map of InsnId -> operands that flow to that insn
-    // Flow goes from send arguments to function parameters and from return values to send results
-    flows_to: Vec<Vec<Opnd>>,
-}
-
 #[inline(never)]
-fn compute_uses(prog: &mut Program) -> CallGraph {
-    // Map of functions to instructions that called them
-    let num_funs = prog.funs.len();
-    let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
-    called_by.resize(num_funs, HashSet::new());
-    for (insn_id, insn) in prog.insns.iter().enumerate() {
-        let Insn { op, .. } = insn;
-        match op {
-            Op::SendStatic { target, args } => {
-                called_by[*target].insert(insn_id);
-            }
-            _ => {}
-        }
-    }
+// Map of InsnId -> instructions that use that insn
+fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
     let num_insns = prog.insns.len();
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
     uses.resize(num_insns, HashSet::new());
-    // Map of InsnId -> instructions that flow to that insn
-    let mut flows_to: Vec<HashSet<Opnd>> = Vec::with_capacity(num_insns);
-    flows_to.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let mut mark_use = |user: InsnId, opnd: &Opnd| {
             match opnd {
@@ -524,40 +535,24 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                     mark_use(insn_id, opnd);
                 }
             }
-            Op::SendDynamic { .. } => {
-                todo!();
+            Op::SendDynamic { self_val, args, .. } => {
+                mark_use(insn_id, self_val);
+                for opnd in args {
+                    mark_use(insn_id, opnd);
+                }
             }
             Op::Return { val, parent_fun } => {
                 mark_use(insn_id, val);
-                for caller in &called_by[*parent_fun] {
-                    mark_use(*caller, &Opnd::Insn(insn_id));
-                    flows_to[*caller].insert(val.clone());
-                }
-            }
-            Op::Param { idx, parent_fun } => {
-                for caller in &called_by[*parent_fun] {
-                    mark_use(insn_id, &Opnd::Insn(*caller));
-                    match &prog.insns[*caller].op {
-                        Op::SendStatic { args, .. } => {
-                            if *idx < args.len() {
-                                flows_to[insn_id].insert(args[*idx].clone());
-                            }
-                        }
-                        op => panic!("Only send should call function; found {op:?}"),
-                    }
-                }
             }
             Op::IfTrue { val, .. } => {
                 mark_use(insn_id, val);
             }
+            Op::Param { .. } => {}
             Op::Jump { .. } => {}
             Op::New { .. } => {}
         }
     }
-    CallGraph {
-        insn_uses: uses.into_iter().map(|set| set.into_iter().collect()).collect(),
-        flows_to: flows_to.into_iter().map(|set| set.into_iter().collect()).collect(),
-    }
+    uses.into_iter().map(|set| set.into_iter().collect()).collect()
 }
 
 // Generate a random acyclic call graph
@@ -861,7 +856,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::Insn(add_id), parent_fun: fun_id });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add_id], vec![ret_id]);
         assert_eq!(insn_uses[ret_id], vec![]);
     }
@@ -871,7 +866,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Insn(add0_id), v1: Opnd::Insn(add0_id) });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add0_id], vec![add1_id]);
         assert_eq!(insn_uses[add1_id], vec![]);
     }
@@ -881,7 +876,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id))] });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add_id], vec![phi_id]);
         assert_eq!(insn_uses[phi_id], vec![]);
     }
@@ -892,31 +887,9 @@ mod compute_uses_tests {
         let (target, target_entry) = prog.new_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Insn(add_id)] });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add_id], vec![send_id]);
         assert_eq!(insn_uses[send_id], vec![]);
-    }
-
-    #[test]
-    fn test_send_uses_return() {
-        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (target, target_entry) = prog.new_fun();
-        let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
-        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
-        assert_eq!(insn_uses[send_id], vec![]);
-        assert_eq!(insn_uses[ret_id], vec![send_id]);
-    }
-
-    #[test]
-    fn test_param_uses_send() {
-        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (target, target_entry) = prog.new_fun();
-        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
-        let ret_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
-        let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(4))] });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
-        assert_eq!(insn_uses[send_id], vec![param_id]);
     }
 
     #[test]
@@ -924,7 +897,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(add_id), then_block: 3, else_block: 4 });
-        let CallGraph { insn_uses, .. } = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add_id], vec![iftrue_id]);
         assert_eq!(insn_uses[iftrue_id], vec![]);
     }
@@ -1083,6 +1056,7 @@ mod sctp_tests {
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![] });
         let result = sctp(&mut prog);
         assert_eq!(result.block_executable[target_entry], true);
+        assert_eq!(result.block_executable[block_id], true);
         assert_eq!(result.insn_type[send_id], Type::Const(Value::Int(5)));
     }
 
