@@ -274,6 +274,9 @@ enum Op
     LessThan { v0: Opnd, v1: Opnd },
     IsNil { v: Opnd },
 
+    // Create a new instance of the class
+    New { class: ClassId },
+
     // Start with a static send (no dynamic lookup)
     // to get the basics of the analysis working
     SendStatic { target: FunId, args: Vec<Opnd> },
@@ -432,6 +435,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     block_worklist.push_back(prog.funs[*target].entry_block);
                     graph.flows_to[insn_id].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
+                Op::New { class } => Type::object(*class),
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(&old_value, &new_value) != *old_value {
@@ -547,6 +551,7 @@ fn compute_uses(prog: &mut Program) -> CallGraph {
                 mark_use(insn_id, val);
             }
             Op::Jump { .. } => {}
+            Op::New { .. } => {}
         }
     }
     CallGraph {
@@ -1227,5 +1232,25 @@ mod sctp_tests {
         let result = sctp(&mut prog);
         assert_eq!(result.insn_type[phi], Type::Const(Value::Int(0)));
         assert_eq!(result.insn_type[outside_call], Type::Const(Value::Int(0)));
+    }
+
+    #[test]
+    fn test_new() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let obj = prog.push_insn(block_id, Op::New { class: ClassId(3) });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(obj), parent_fun: fun_id });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[obj], Type::object(ClassId(3)));
+    }
+
+    #[test]
+    fn test_phi_new() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let obj3 = prog.push_insn(block_id, Op::New { class: ClassId(3) });
+        let obj4 = prog.push_insn(block_id, Op::New { class: ClassId(4) });
+        let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj3)), (block_id, Opnd::Insn(obj4))] });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+        let result = sctp(&mut prog);
+        assert_eq!(result.insn_type[phi], Type::objects(&vec![ClassId(3), ClassId(4)]));
     }
 }
