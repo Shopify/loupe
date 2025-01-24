@@ -835,6 +835,19 @@ fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
     }
 }
 
+// Time the execution of a function, produce a value in milliseconds
+fn time_exec_ms<F, T>(f: F) -> (T, f64)
+where
+    F: FnOnce() -> T
+{
+    use std::time::Instant;
+    let start = Instant::now();
+    let result = f();
+    let duration = start.elapsed();
+    let ms = duration.as_secs_f64() * 1000.0;
+    (result, ms)
+}
+
 fn main()
 {
     // TODO:
@@ -846,16 +859,13 @@ fn main()
 
     // Only checking that the construction works for now
     let prog = gen_torture_test_2(5_000, 50, 200);
+    //let (result, time_ms) = time_exec_ms(|| sctp(&mut prog));
+
 
 
 
     let mut prog = gen_torture_test(20_000);
-
-    use std::time::Instant;
-    let start_time = Instant::now();
-    let result = sctp(&mut prog);
-    let duration = start_time.elapsed();
-    let time_ms = duration.as_secs_f64() * 1000.0;
+    let (result, time_ms) = time_exec_ms(|| sctp(&mut prog));
 
     // Check that all functions marked executable
     for fun in &prog.funs {
