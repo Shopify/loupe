@@ -968,11 +968,11 @@ fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
                 for insn_id in &block.insns {
                     let insn = &prog.insns[insn_id.0];
                     match result {
-                        Some(ref result) => {
+                        Some(ref result) if !insn.op.is_terminator() => {
                             let ty = result.type_of(*insn_id);
                             println!("    {insn_id}:{ty:?} = {insn:?}");
                         }
-                        None => {
+                        _ => {
                             println!("    {insn_id}: {insn:?}");
                         }
                     }
