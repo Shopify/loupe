@@ -881,7 +881,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         // In practice, most call sites are monomorphic.
         // Sizes should skew small most of the time but follow a power law
         let num_classes = rng.pareto_int(0.6, 1, 90) as usize;
-        println!("num_classes: {}", num_classes);
+        // println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
         let mut objs = HashSet::new();
