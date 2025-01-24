@@ -561,7 +561,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                         // NOTE: assumes all Param are in the first block of a function
                         for target_insn in &prog.blocks[target_entry_id.0].insns {
                             match prog.insns[target_insn.0].op {
-                                Op::Param { idx, .. } if idx < args.len() => {
+                                Op::Param { idx, .. } => {
+                                    assert!(idx < args.len());
                                     flows_to[target_insn.0].insert(args[idx]);
                                 }
                                 _ => {}
@@ -572,7 +573,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                     // If we have any new information for the parameters, enqueue them
                     for target_insn in &prog.blocks[target_entry_id.0].insns {
                         match prog.insns[target_insn.0].op {
-                            Op::Param { idx, .. } if idx < args.len() => {
+                            Op::Param { idx, .. } => {
+                                assert!(idx < args.len());
                                 let arg_type = type_of(&args[idx]);
                                 let old_type = &types[target_insn.0];
                                 if union(old_type, &arg_type) != *old_type {
@@ -601,7 +603,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                                     // NOTE: assumes all Param are in the first block of a function
                                     for target_insn in &prog.blocks[target_entry_id.0].insns {
                                         match prog.insns[target_insn.0].op {
-                                            Op::Param { idx, .. } if idx < args.len() => {
+                                            Op::Param { idx, .. } => {
+                                                assert!(idx < args.len());
                                                 flows_to[target_insn.0].insert(args[idx]);
                                             }
                                             _ => {}
@@ -612,7 +615,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 // If we have any new information for the parameters, enqueue them
                                 for target_insn in &prog.blocks[target_entry_id.0].insns {
                                     match prog.insns[target_insn.0].op {
-                                        Op::Param { idx, .. } if idx < args.len() => {
+                                        Op::Param { idx, .. } => {
+                                            assert!(idx < args.len());
                                             let arg_type = type_of(&args[idx]);
                                             let old_type = &types[target_insn.0];
                                             if union(old_type, &arg_type) != *old_type {
