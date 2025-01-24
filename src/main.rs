@@ -61,6 +61,38 @@ impl LCG {
         assert!(!slice.is_empty());
         &slice[self.rand_idx(slice.len())]
     }
+
+    // Generate a random float between 0 and 1
+    pub fn rand_float(&mut self) -> f64 {
+        (self.next_u32() as f64) / (u32::MAX as f64)
+    }
+
+    // Sample an integer from a Pareto distribution with bounds
+    // This version includes a maximum value to prevent extremely large numbers
+    // alpha: shape parameter (must be positive)
+    // min_value: scale parameter (must be positive)
+    //
+    // The alpha parameter controls the shape of the distribution:
+    // - Lower alpha values (e.g., 1.1) produce more extreme values
+    // - Higher alpha values (e.g., 3.0) produce values more concentrated near the minimum
+    //
+    pub fn pareto_int(&mut self, alpha: f64, min_value: u64, max_value: u64) -> u64 {
+        assert!(alpha > 0.0, "Alpha must be positive");
+        assert!(min_value > 0, "Minimum value must be positive");
+        assert!(max_value > min_value, "Maximum value must be greater than minimum value");
+
+        let u = self.rand_float();
+
+        // Simpler bounded Pareto formula
+        let min_f = min_value as f64;
+        let max_f = max_value as f64;
+
+        let l = min_f.powf(-alpha);
+        let h = max_f.powf(-alpha);
+        let x = (1.0 / ((h + u * (l - h)).powf(1.0/alpha))).round();
+
+        x.clamp(min_value as f64, max_f) as u64
+    }
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
@@ -783,14 +815,8 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         }
 
         // In practice, most call sites are monomorphic.
-        // Sizes should skew small 80% of the time, with a smaller
-        // probability of encountering megamorphic call sites
-        let num_classes = if rng.pct_prob(80) {
-            rng.rand_usize(1, 3)
-        } else {
-            rng.rand_usize(1, 50)
-        };
-
+        // Sizes should skew small most of the time but follow a power law
+        let num_classes = rng.pareto_int(0.6, 1, 90) as usize;
         println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
