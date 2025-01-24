@@ -410,7 +410,7 @@ impl AnalysisResult {
 
 // Sparse conditionall type propagation
 #[inline(never)]
-fn sctp(prog: &mut Program) -> AnalysisResult
+fn sctp(prog: &Program) -> AnalysisResult
 {
     let insn_uses = compute_uses(prog);
     let num_blocks = prog.blocks.len();
@@ -616,7 +616,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
 
 #[inline(never)]
 // Map of InsnId -> instructions that use that insn
-fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
+fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
     let num_insns = prog.insns.len();
