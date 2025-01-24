@@ -220,7 +220,7 @@ impl Program {
 
     // Register a method associated with a class
     pub fn new_method(&mut self, class_id: ClassId, name: String) -> (FunId, BlockId) {
-        let (m_id, b_id) = self.new_fun();
+        let (m_id, b_id) = self.new_fun_with_name(name.clone());
 
         // Register the method with the given class
         let k = &mut self.classes[class_id.0];
@@ -231,12 +231,17 @@ impl Program {
         (m_id, b_id)
     }
 
-    // Register a function and assign it an id
-    pub fn new_fun(&mut self) -> (FunId, BlockId) {
+    // Register a named function and assign it an id
+    pub fn new_fun_with_name(&mut self, name: String) -> (FunId, BlockId) {
         let id = FunId(self.funs.len());
         let entry_block = self.new_block(id);
-        self.funs.push(Function { entry_block });
+        self.funs.push(Function { name, entry_block });
         (id, entry_block)
+    }
+
+    // Register a function and assign it an id
+    pub fn new_fun(&mut self) -> (FunId, BlockId) {
+        self.new_fun_with_name("".to_string())
     }
 
     // Register a block and assign it an id
@@ -290,6 +295,8 @@ impl Program {
 #[derive(Debug)]
 struct Function
 {
+    name: String,
+
     entry_block: BlockId,
 
     // We don't need an explicit list of blocks
@@ -1000,19 +1007,10 @@ where
 
 fn main()
 {
-    // TODO:
-    // 1. Start with intraprocedural analysis
-    // 2. Get interprocedural analysis working with direct send (no classes, no native methods)
-    // 3. Once confident that interprocedural analysis is working, then add classes and objects
-
-
-
     let prog = gen_torture_test_2(5_000, 200, 750);
-    //print_prog(&prog, Some(result));
-    //let prog = gen_torture_test_2(2, 1, 2);
+    //let prog = gen_torture_test_2(500, 20, 1);
 
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
-
 
     // Check that all functions marked executable
     let mut exec_fn_count = 0;
@@ -1023,9 +1021,6 @@ fn main()
         }
     }
     println!("exec_fn_count: {}", exec_fn_count);
-
-
-
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
@@ -1043,11 +1038,22 @@ fn main()
         }
     }
 
+    // Check that all global functions (but not methods) are marked executable
+    for fun in &prog.funs {
+        let entry_id = fun.entry_block;
+
+        if !fun.name.starts_with("m") && !result.block_executable[entry_id.0] {
+            panic!("all function entry blocks should be executable");
+        }
+    }
+
     println!("Total function count: {}", prog.funs.len());
     println!("Total instruction count: {}", prog.insns.len());
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
     println!();
+
+    //print_prog(&prog, Some(result));
 
 
 
@@ -1084,12 +1090,6 @@ fn main()
 
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
-
-
-
-
-
-
 }
 
 #[cfg(test)]
