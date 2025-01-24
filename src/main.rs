@@ -277,6 +277,10 @@ impl Program {
             _ => panic!("Can't append phi arg to non-phi {:?}", insn)
         }
     }
+
+    fn entry_of(&self, fun_id: FunId) -> BlockId {
+        self.funs[fun_id.0].entry_block
+    }
 }
 
 #[derive(Debug)]
@@ -428,8 +432,20 @@ fn sctp(prog: &mut Program) -> AnalysisResult
     flows_to.resize(num_insns, HashSet::new());
 
     // Mark entry as executable
-    let entry = prog.funs[prog.main.0].entry_block;
+    let entry = prog.entry_of(prog.main);
     executable[entry.0] = true;
+
+    // Map of FunId -> list of that function's return values
+    // TODO(max): Maybe cache return type of each function
+    let mut func_returns: Vec<Vec<Opnd>> = Vec::with_capacity(num_funs);
+    func_returns.resize(num_funs, vec![]);
+
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        match insn.op {
+            Op::Return { val, parent_fun  } => func_returns[parent_fun.0].push(val),
+            _ => {}
+        }
+    }
 
     // Work list of instructions or blocks
     let mut block_worklist: VecDeque<BlockId> = VecDeque::new();
@@ -442,8 +458,9 @@ fn sctp(prog: &mut Program) -> AnalysisResult
         while let Some(insn_id) = insn_worklist.pop_front() {
             itr_count += 1;
 
-            let Insn {op, ..} = &prog.insns[insn_id.0];
+            let Insn {op, block_id, ..} = &prog.insns[insn_id.0];
             let old_type = &types[insn_id.0];
+            let fun_id = prog.blocks[block_id.0].fun_id;
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
@@ -473,7 +490,7 @@ fn sctp(prog: &mut Program) -> AnalysisResult
             if let Op::Return { val, parent_fun } = op {
                 if type_of(val) == Type::Empty { continue; }
                 for send_insn in &called_by[parent_fun.0] {
-                    flows_to[send_insn.0].insert(*val);
+                    assert!(matches!(prog.insns[send_insn.0].op, Op::SendStatic { .. }));
                     let old_type = &types[send_insn.0];
                     if union(old_type, &type_of(&val)) != *old_type {
                         insn_worklist.push_back(*send_insn);
@@ -528,31 +545,41 @@ fn sctp(prog: &mut Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx, parent_fun } => {
+                    // TODO(max): Pull from callers?
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
-                    called_by[target.0].insert(insn_id);
-                    let target_entry_id = prog.funs[target.0].entry_block;
-                    block_worklist.push_back(target_entry_id);
-                    // First flow arguments to parameters
-                    // NOTE: assumes all Param are in the first block of a function
+                    let target_entry_id = prog.entry_of(*target);
+                    if called_by[target.0].insert(insn_id) {
+                        // Newly inserted; enqueue target and update flow relation
+                        block_worklist.push_back(target_entry_id);
+                        // Flow arguments to parameters
+                        // NOTE: assumes all Param are in the first block of a function
+                        for target_insn in &prog.blocks[target_entry_id.0].insns {
+                            match prog.insns[target_insn.0].op {
+                                Op::Param { idx, .. } if idx < args.len() => {
+                                    flows_to[target_insn.0].insert(args[idx]);
+                                }
+                                _ => {}
+                            }
+                        }
+                        // TODO(max): Mark all Insn operands as being used by Param?
+                    }
+                    // If we have any new information for the parameters, enqueue them
                     for target_insn in &prog.blocks[target_entry_id.0].insns {
-                        // TODO(max): Should this instead modify the uses table?
                         match prog.insns[target_insn.0].op {
-                            Op::Param { idx, .. } => {
-                                // TODO(max): Handle OOB arguments
-                                if idx < args.len() {
-                                    let arg = args[idx];
-                                    let arg_type = type_of(&arg);
-                                    let old_type = &types[target_insn.0];
-                                    if union(old_type, &arg_type) != *old_type {
-                                        flows_to[target_insn.0].insert(args[idx]);
-                                        insn_worklist.push_back(*target_insn);
-                                    }
+                            Op::Param { idx, .. } if idx < args.len() => {
+                                let arg_type = type_of(&args[idx]);
+                                let old_type = &types[target_insn.0];
+                                if union(old_type, &arg_type) != *old_type {
+                                    insn_worklist.push_back(*target_insn);
                                 }
                             }
                             _ => {}
                         }
+                    }
+                    for val in &func_returns[target.0] {
+                        flows_to[insn_id.0].insert(*val);
                     }
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
