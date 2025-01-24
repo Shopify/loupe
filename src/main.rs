@@ -1001,7 +1001,6 @@ fn main()
 
 
 
-    // Only checking that the construction works for now
     let prog = gen_torture_test_2(5_000, 50, 200);
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
     println!("Total function count: {}", prog.funs.len());
