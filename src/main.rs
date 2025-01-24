@@ -1009,7 +1009,6 @@ fn main()
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
     println!();
-    let prog = gen_torture_test_2(5_000, 50, 200);
 
 
 
