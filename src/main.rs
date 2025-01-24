@@ -248,12 +248,12 @@ impl Program {
 
     // Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
-        // Check that we're not adding two branch/terminator instructions at the end of a block
-        if op.is_terminator() {
-            if self.blocks_terminated.contains(&block) {
-                panic!("Cannot push terminator instruction on block that is already terminated");
-            }
+        // Check that we're not adding insns after a branch in an already terminated block
+        if self.blocks_terminated.contains(&block) {
+            panic!("Cannot push terminator instruction on block that is already terminated");
+        }
 
+        if op.is_terminator() {
             self.blocks_terminated.insert(block);
         }
 
