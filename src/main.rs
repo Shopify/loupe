@@ -189,6 +189,9 @@ struct Program
 
     blocks: Vec<Block>,
 
+    // Set of blocks that contain a terminator instruction
+    blocks_terminated: HashSet<BlockId>,
+
     insns: Vec<Insn>,
 
     // Main/entry function
@@ -233,11 +236,19 @@ impl Program {
 
     // Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
+        // Check that we're not adding two branch/terminator instructions at the end of a block
+        if op.is_terminator() {
+            if self.blocks_terminated.contains(&block) {
+                panic!("Cannot push terminator instruction on block that is already terminated");
+            }
+
+            self.blocks_terminated.insert(block);
+        }
+
         let insn = Insn {
             block_id: block,
             op,
         };
-
         let id = InsnId(self.insns.len());
         self.insns.push(insn);
 
@@ -340,6 +351,18 @@ enum Op
 
     IfTrue { val: Opnd, then_block: BlockId, else_block: BlockId  },
     Jump { target: BlockId }
+}
+
+impl Op {
+    // Check whether this is a branch which terminates a block
+    fn is_terminator(&self) -> bool {
+        match self {
+            Op::Return {..} => true,
+            Op::IfTrue {..} => true,
+            Op::Jump {..} => true,
+            _ => false,
+        }
+    }
 }
 
 struct AnalysisResult {
@@ -698,6 +721,7 @@ fn gen_torture_test(num_funs: usize) -> Program
                 let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
                 let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
                 sum_val = Opnd::Insn(add_id);
+                last_block = sum_block;
             }
 
             prog.push_insn(
@@ -806,6 +830,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
                 let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
                 let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
                 sum_val = Opnd::Insn(add_id);
+                last_block = sum_block;
             }
 
             prog.push_insn(
@@ -1260,6 +1285,7 @@ mod sctp_tests {
         let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
         let body_id = prog.new_block(fun_id);
         let end_id = prog.new_block(fun_id);
+
         prog.push_insn(entry_id, Op::Jump { target: body_id });
         let n = prog.push_insn(body_id, Op::Phi { ins: vec![(entry_id, ZERO)] });
         let n_inc = prog.push_insn(body_id, Op::Add { v0: Opnd::Insn(n), v1: ONE });
@@ -1268,6 +1294,7 @@ mod sctp_tests {
         prog.push_insn(body_id, Op::IfTrue { val: Opnd::Insn(cond), then_block: body_id, else_block: end_id });
         prog.push_insn(end_id, Op::Return { val: Opnd::Insn(n), parent_fun: fun_id });
         let result = sctp(&mut prog);
+
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(body_id), true);
         assert_eq!(result.is_executable(end_id), true);
