@@ -135,6 +135,18 @@ impl std::fmt::Display for InsnId {
     }
 }
 
+impl std::fmt::Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "bb{}", self.0)
+    }
+}
+
+impl std::fmt::Display for FunId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fn{}", self.0)
+    }
+}
+
 // Type: Int, Nil, Class
 #[derive(Debug, Clone, PartialEq)]
 enum Type
@@ -864,23 +876,26 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 }
 
 fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
-    for (insn_id, insn) in prog.insns.iter().enumerate() {
-        let insn_id = InsnId(insn_id);
-        let block_id = insn.block_id;
-        let fun_id = prog.blocks[block_id.0].fun_id;
-        if insn_id == prog.blocks[prog.funs[fun_id.0].entry_block.0].insns[0] {
-            println!("fun {fun_id:?}:");
-        }
-        if insn_id == prog.blocks[block_id.0].insns[0] {
-            println!("  block {block_id:?}:");
-        }
-        match result {
-            Some(ref result) => {
-                let ty = result.type_of(insn_id);
-                println!("    {insn_id}:{ty:?} = {insn:?}");
-            }
-            None => {
-                println!("    {insn_id}: {insn:?}");
+    for (fun_id, fun) in prog.funs.iter().enumerate() {
+        let fun_id = FunId(fun_id);
+        println!("fun {fun_id:?}:");
+        for (block_id, block) in prog.blocks.iter().enumerate() {
+            let block_id = BlockId(block_id);
+            // We don't keep a map of Function->Vec<BlockId>
+            if block.fun_id == fun_id {
+                println!("  block {block_id:?}:");
+                for insn_id in &block.insns {
+                    let insn = &prog.insns[insn_id.0];
+                    match result {
+                        Some(ref result) => {
+                            let ty = result.type_of(*insn_id);
+                            println!("    {insn_id}:{ty:?} = {insn:?}");
+                        }
+                        None => {
+                            println!("    {insn_id}: {insn:?}");
+                        }
+                    }
+                }
             }
         }
     }
