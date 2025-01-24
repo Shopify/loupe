@@ -1000,9 +1000,12 @@ fn main()
     // Only checking that the construction works for now
     let mut prog = gen_torture_test_2(5_000, 50, 200);
     let (result, time_ms) = time_exec_ms(|| sctp(&mut prog));
+    println!("Total function count: {}", prog.funs.len());
+    println!("Total instruction count: {}", prog.insns.len());
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
     println!();
+    let prog = gen_torture_test_2(5_000, 50, 200);
 
 
 
