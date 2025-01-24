@@ -957,14 +957,15 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 }
 
 fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
+    println!("Entry: {fun_id}");
     for (fun_id, fun) in prog.funs.iter().enumerate() {
         let fun_id = FunId(fun_id);
-        println!("fun {fun_id:?}:");
+        println!("fun {fun_id}:");
         for (block_id, block) in prog.blocks.iter().enumerate() {
             let block_id = BlockId(block_id);
             // We don't keep a map of Function->Vec<BlockId>
             if block.fun_id == fun_id {
-                println!("  block {block_id:?}:");
+                println!("  block {block_id}:");
                 for insn_id in &block.insns {
                     let insn = &prog.insns[insn_id.0];
                     match result {
