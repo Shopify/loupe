@@ -281,6 +281,10 @@ impl Program {
     fn entry_of(&self, fun_id: FunId) -> BlockId {
         self.funs[fun_id.0].entry_block
     }
+
+    fn lookup_method(&self, class_id: ClassId, method_name: &String) -> Option<FunId> {
+        self.classes[class_id.0].methods.get(method_name).copied()
+    }
 }
 
 #[derive(Debug)]
@@ -490,7 +494,7 @@ fn sctp(prog: &Program) -> AnalysisResult
             if let Op::Return { val, parent_fun } = op {
                 if type_of(val) == Type::Empty { continue; }
                 for send_insn in &called_by[parent_fun.0] {
-                    assert!(matches!(prog.insns[send_insn.0].op, Op::SendStatic { .. }));
+                    assert!(matches!(prog.insns[send_insn.0].op, Op::SendStatic { .. } | Op::SendDynamic { .. }));
                     let old_type = &types[send_insn.0];
                     if union(old_type, &type_of(&val)) != *old_type {
                         insn_worklist.push_back(*send_insn);
@@ -584,6 +588,49 @@ fn sctp(prog: &Program) -> AnalysisResult
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::New { class } => Type::object(*class),
+                Op::SendDynamic { method, self_val, args } => {
+                    match type_of(self_val) {
+                        Type::Object(class_ids) => {
+                            let targets = class_ids.iter().filter_map(|class_id| prog.lookup_method(*class_id, method));
+                            for target in targets {
+                                let target_entry_id = prog.entry_of(target);
+                                if called_by[target.0].insert(insn_id) {
+                                    // Newly inserted; enqueue target and update flow relation
+                                    block_worklist.push_back(target_entry_id);
+                                    // Flow arguments to parameters
+                                    // NOTE: assumes all Param are in the first block of a function
+                                    for target_insn in &prog.blocks[target_entry_id.0].insns {
+                                        match prog.insns[target_insn.0].op {
+                                            Op::Param { idx, .. } if idx < args.len() => {
+                                                flows_to[target_insn.0].insert(args[idx]);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    // TODO(max): Mark all Insn operands as being used by Param?
+                                }
+                                // If we have any new information for the parameters, enqueue them
+                                for target_insn in &prog.blocks[target_entry_id.0].insns {
+                                    match prog.insns[target_insn.0].op {
+                                        Op::Param { idx, .. } if idx < args.len() => {
+                                            let arg_type = type_of(&args[idx]);
+                                            let old_type = &types[target_insn.0];
+                                            if union(old_type, &arg_type) != *old_type {
+                                                insn_worklist.push_back(*target_insn);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                for val in &func_returns[target.0] {
+                                    flows_to[insn_id.0].insert(*val);
+                                }
+                            }
+                            flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                        }
+                        ty => panic!("send to non-Object type {ty:?}"),
+                    }
+                }
                 _ => todo!("op not yet supported {:?}", op),
             };
             if union(&old_type, &new_type) != *old_type {
@@ -951,8 +998,11 @@ fn main()
 
 
     // Only checking that the construction works for now
-    let prog = gen_torture_test_2(5_000, 50, 200);
-    //let (result, time_ms) = time_exec_ms(|| sctp(&mut prog));
+    let mut prog = gen_torture_test_2(5_000, 50, 200);
+    let (result, time_ms) = time_exec_ms(|| sctp(&mut prog));
+    println!("analysis time: {:.1} ms", time_ms);
+    println!("itr count: {}", result.itr_count);
+    println!();
 
 
 
