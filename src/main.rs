@@ -530,10 +530,10 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
     uses.resize(num_insns, HashSet::new());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let insn_id = InsnId(insn_id);
-        let mut mark_use = |user: InsnId, opnd: &Opnd| {
+        let mut mark_use = |opnd: &Opnd| {
             match opnd {
                 Opnd::Insn(used) => {
-                    uses[used.0].insert(user);
+                    uses[used.0].insert(insn_id);
                 }
                 _ => {}
             }
@@ -541,32 +541,32 @@ fn compute_uses(prog: &mut Program) -> Vec<Vec<InsnId>> {
         match &insn.op {
             Op::Phi { ins } => {
                 for (_, opnd) in ins {
-                    mark_use(insn_id, opnd);
+                    mark_use(opnd);
                 }
             }
             Op::Add { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 } => {
-                mark_use(insn_id, v0);
-                mark_use(insn_id, v1);
+                mark_use(v0);
+                mark_use(v1);
             }
             Op::IsNil { v } => {
-                mark_use(insn_id, v);
+                mark_use(v);
             }
             Op::SendStatic { args, .. } => {
                 for opnd in args {
-                    mark_use(insn_id, opnd);
+                    mark_use(opnd);
                 }
             }
             Op::SendDynamic { self_val, args, .. } => {
-                mark_use(insn_id, self_val);
+                mark_use(self_val);
                 for opnd in args {
-                    mark_use(insn_id, opnd);
+                    mark_use(opnd);
                 }
             }
             Op::Return { val, parent_fun } => {
-                mark_use(insn_id, val);
+                mark_use(val);
             }
             Op::IfTrue { val, .. } => {
-                mark_use(insn_id, val);
+                mark_use(val);
             }
             Op::Param { .. } => {}
             Op::Jump { .. } => {}
