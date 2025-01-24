@@ -880,7 +880,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         let mut fun_map = HashMap::new();
 
         // For each DAG node, going from leafs to root
-        for (dag_idx, callees) in callees.into_iter().rev().enumerate() {
+        for (dag_idx, callees) in callees.into_iter().enumerate().rev() {
             let (fun_id, entry_block) = prog.new_fun();
             let param_id = prog.push_insn(entry_block, Op::Param { idx: 0, parent_fun: fun_id });
 
@@ -914,7 +914,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
             // Call each callee
             for callee_node_id in callees {
                 // Call the function
-                let callee_fun_id = fun_map.get(&dag_idx).unwrap();
+                let callee_fun_id = fun_map.get(&callee_node_id).unwrap();
                 let call_insn = prog.push_insn(
                     sum_block,
                     Op::SendStatic { target: *callee_fun_id, args: vec![Opnd::Insn(param_id)] }
@@ -933,8 +933,8 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
         // In practice, most call sites are monomorphic.
         // Sizes should skew small most of the time but follow a power law
-        let num_classes = rng.pareto_int(0.6, 1, min(90, num_classes as u64)) as usize;
-        // println!("num_classes: {}", num_classes);
+        let num_classes = rng.pareto_int(0.45, 1, min(150, num_classes as u64)) as usize;
+        println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
         let mut objs = HashSet::new();
@@ -1004,13 +1004,41 @@ fn main()
 
 
 
-    //let prog = gen_torture_test_2(5_000, 50, 200);
-
-    let prog = gen_torture_test_2(2, 1, 2);
-
+    let prog = gen_torture_test_2(5_000, 200, 750);
+    //print_prog(&prog, Some(result));
+    //let prog = gen_torture_test_2(2, 1, 2);
 
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
 
+
+    // Check that all functions marked executable
+    let mut exec_fn_count = 0;
+    for fun in &prog.funs {
+        let entry_id = fun.entry_block;
+        if result.block_executable[entry_id.0] {
+            exec_fn_count += 1;
+        }
+    }
+    println!("exec_fn_count: {}", exec_fn_count);
+
+
+
+
+    // Check that the main return type is integer
+    for (insn_id, insn) in prog.insns.iter().enumerate() {
+        if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
+            if *parent_fun == prog.main {
+                let ret_type = &result.insn_type[ret_id.0];
+                println!("{insn_id}: main return type: {:?}", ret_type);
+
+                match ret_type {
+                    Type::Int => {}
+                    Type::Const(_) => {}
+                    _ => panic!("output type should be an int but got {ret_type:?}"),
+                }
+            }
+        }
+    }
 
     println!("Total function count: {}", prog.funs.len());
     println!("Total instruction count: {}", prog.insns.len());
@@ -1019,8 +1047,6 @@ fn main()
     println!();
 
 
-
-    print_prog(&prog, Some(result));
 
 
 
