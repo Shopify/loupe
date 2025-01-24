@@ -895,36 +895,39 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
                 Op::SendDynamic { method: m_name, self_val: Opnd::Insn(param_id) , args: vec![] }
             );
 
-            let mut last_block = entry_block;
-            let mut sum_val = Opnd::Insn(call_insn);
+            let nil_block = prog.new_block(fun_id);
+            let int_block = prog.new_block(fun_id);
+            let sum_block = prog.new_block(fun_id);
+
+            // Check if the method returned nil or an integer
+            let isnil_insn = prog.push_insn(entry_block, Op::IsNil { v: Opnd::Insn(call_insn) });
+            prog.push_insn(entry_block, Op::IfTrue { val: Opnd::Insn(isnil_insn), then_block: nil_block, else_block: int_block });
+
+            // Both branches go to the sum block
+            prog.push_insn(nil_block, Op::Jump { target: sum_block });
+            prog.push_insn(int_block, Op::Jump { target: sum_block });
+
+            // Compute the sum
+            let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
+            let add_id = prog.push_insn(sum_block, Op::Add { v0: Opnd::Insn(call_insn), v1: Opnd::Insn(phi_id) });
+            let mut sum_val = Opnd::Insn(add_id);
 
             // Call each callee
             for callee_node_id in callees {
-                let nil_block = prog.new_block(fun_id);
-                let int_block = prog.new_block(fun_id);
-                let sum_block = prog.new_block(fun_id);
-
+                // Call the function
                 let callee_fun_id = fun_map.get(&dag_idx).unwrap();
                 let call_insn = prog.push_insn(
-                    last_block,
-                    Op::SendStatic { target: *callee_fun_id, args: vec![] }
+                    sum_block,
+                    Op::SendStatic { target: *callee_fun_id, args: vec![Opnd::Insn(param_id)] }
                 );
-                let isnil_insn = prog.push_insn(last_block, Op::IsNil { v: Opnd::Insn(call_insn) });
-                prog.push_insn(last_block, Op::IfTrue { val: Opnd::Insn(isnil_insn), then_block: nil_block, else_block: int_block });
 
-                // Both branches go to the sum block
-                prog.push_insn(nil_block, Op::Jump { target: sum_block });
-                prog.push_insn(int_block, Op::Jump { target: sum_block });
-
-                // Compute the sum
-                let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
-                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
+                // Add this value to the sum
+                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(call_insn) });
                 sum_val = Opnd::Insn(add_id);
-                last_block = sum_block;
             }
 
             prog.push_insn(
-                last_block,
+                sum_block,
                 Op::Return { val: sum_val, parent_fun: fun_id }
             );
         }
