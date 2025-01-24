@@ -909,8 +909,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
             // Compute the sum
             let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
-            let add_id = prog.push_insn(sum_block, Op::Add { v0: Opnd::Insn(call_insn), v1: Opnd::Insn(phi_id) });
-            let mut sum_val = Opnd::Insn(add_id);
+            let mut sum_val = Opnd::Insn(phi_id);
 
             // Call each callee
             for callee_node_id in callees {
@@ -934,7 +933,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
         // In practice, most call sites are monomorphic.
         // Sizes should skew small most of the time but follow a power law
-        let num_classes = rng.pareto_int(0.6, 1, 90) as usize;
+        let num_classes = rng.pareto_int(0.6, 1, min(90, num_classes as u64)) as usize;
         // println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
@@ -1005,13 +1004,24 @@ fn main()
 
 
 
-    let prog = gen_torture_test_2(5_000, 50, 200);
+    //let prog = gen_torture_test_2(5_000, 50, 200);
+
+    let prog = gen_torture_test_2(2, 1, 2);
+
+
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
+
+
     println!("Total function count: {}", prog.funs.len());
     println!("Total instruction count: {}", prog.insns.len());
     println!("analysis time: {:.1} ms", time_ms);
     println!("itr count: {}", result.itr_count);
     println!();
+
+
+
+    print_prog(&prog, Some(result));
+
 
 
 
