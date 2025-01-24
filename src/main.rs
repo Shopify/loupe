@@ -89,7 +89,7 @@ impl LCG {
 
         let l = min_f.powf(-alpha);
         let h = max_f.powf(-alpha);
-        let x = (1.0 / ((h + u * (l - h)).powf(1.0/alpha))).round();
+        let x = (1.0 / ((h + u * (l - h)).powf(1.0 / alpha))).round();
 
         x.clamp(min_value as f64, max_f) as u64
     }
@@ -361,13 +361,13 @@ enum Op
     // on the Function object this instruction belongs to
     Return { val: Opnd, parent_fun: FunId },
 
-    // Load a function parameter. Knows which function it belongs to so that we can more easily
-    // flow type information in SCTP.
+    // Load a function parameter. Knows which function it belongs to so that
+    // we can more easily flow type information in SCTP.
     Param { idx: usize, parent_fun: FunId },
 
-    // Wait until we have basic interprocedural analysis working
-    //GetIvar,
-    //SetIvar,
+    // Get/set ivar values
+    SetIvar { name: String, self_val: Opnd, val: Opnd },
+    GetIvar { name: String, self_val: Opnd, },
 
     IfTrue { val: Opnd, then_block: BlockId, else_block: BlockId  },
     Jump { target: BlockId }
@@ -716,6 +716,9 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
             Op::Param { .. } => {}
             Op::Jump { .. } => {}
             Op::New { .. } => {}
+
+            Op::SetIvar { .. } => { todo!() }
+            Op::GetIvar { .. } => { todo!() }
         }
     }
     uses.into_iter().map(|set| set.into_iter().collect()).collect()
