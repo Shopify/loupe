@@ -724,8 +724,13 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
             Op::Jump { .. } => {}
             Op::New { .. } => {}
 
-            Op::SetIvar { .. } => { todo!() }
-            Op::GetIvar { .. } => { todo!() }
+            Op::SetIvar { self_val, val } => {
+                mark_use(self_val);
+                mark_use(val);
+            }
+            Op::GetIvar { self_val } => {
+                mark_use(self_val);
+            }
         }
     }
     uses.into_iter().map(|set| set.into_iter().collect()).collect()
