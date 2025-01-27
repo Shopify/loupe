@@ -1614,4 +1614,18 @@ mod sctp_tests {
         assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(3), ClassId(4)]));
 
     }
+
+    #[test]
+    fn test_one_send_dynamic_flows_to_method_param() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let class_id = prog.new_class();
+        let (method_id, method_entry_id) = prog.new_method(class_id, "foo".into());
+        let param_id = prog.push_insn(method_entry_id, Op::Param { idx: 0, parent_fun: method_id });
+        let return_id = prog.push_insn(method_entry_id, Op::Return { val: Opnd::Insn(param_id), parent_fun: method_id });
+        let obj_id = prog.push_insn(block_id, Op::New { class: class_id });
+        let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(obj_id), args: vec![Opnd::Const(Value::Int(5))] });
+        let result = sctp(&mut prog);
+        assert_eq!(result.is_executable(method_entry_id), true);
+        assert_eq!(result.type_of(param_id), Type::Const(Value::Int(5)));
+    }
 }
