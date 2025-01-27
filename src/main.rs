@@ -724,11 +724,11 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
             Op::Jump { .. } => {}
             Op::New { .. } => {}
 
-            Op::SetIvar { self_val, val } => {
+            Op::SetIvar { self_val, val, .. } => {
                 mark_use(self_val);
                 mark_use(val);
             }
-            Op::GetIvar { self_val } => {
+            Op::GetIvar { self_val, .. } => {
                 mark_use(self_val);
             }
         }
