@@ -519,6 +519,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 Some(result) => Type::Const(Value::Int(result)),
                                 _ => Type::Int,
                             }
+                        // TODO(max): Add and use is_int()
                         (l, r) if union(&l, &r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
@@ -531,6 +532,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 Some(result) => Type::Const(Value::Int(result)),
                                 _ => Type::Int,
                             }
+                        // TODO(max): Add and use is_int()
                         (l, r) if union(&l, &r) == Type::Int => Type::Int,
                         _ => Type::Any,
                     }
@@ -539,6 +541,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     match (type_of(v0), type_of(v1)) {
                         (Type::Empty, _) | (_, Type::Empty) => Type::Empty,
                         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Const(Value::Bool(l<r)),
+                        // TODO(max): Add and use is_int()
                         (l, r) if union(&l, &r) == Type::Int => Type::Bool,
                         _ => Type::Any,
                     }
@@ -584,6 +587,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 assert!(idx < args.len());
                                 let arg_type = type_of(&args[idx]);
                                 let old_type = &types[target_insn.0];
+                                // TODO(max): Make some shortcuts for checking if union(old, new) != old
+                                // For example, something like if new > old, this is an easy yes
                                 if union(old_type, &arg_type) != *old_type {
                                     insn_worklist.push_back(*target_insn);
                                 }
@@ -626,6 +631,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                                             assert!(idx < args.len());
                                             let arg_type = type_of(&args[idx]);
                                             let old_type = &types[target_insn.0];
+                                            // TODO(max): Make some shortcuts for checking if union(old, new) != old
+                                            // For example, something like if new > old, this is an easy yes
                                             if union(old_type, &arg_type) != *old_type {
                                                 insn_worklist.push_back(*target_insn);
                                             }
@@ -644,6 +651,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                 }
                 _ => todo!("op not yet supported {:?}", op),
             };
+            // TODO(max): Make some shortcuts for checking if union(old, new) != old
+            // For example, something like if new > old, this is an easy yes
             if union(&old_type, &new_type) != *old_type {
                 types[insn_id.0] = new_type;
                 for use_id in &insn_uses[insn_id.0] {
