@@ -366,11 +366,10 @@ enum Op
 
     // The caller blocks this function can return to are stored
     // on the Function object this instruction belongs to
-    Return { val: Opnd, parent_fun: FunId },
+    Return { val: Opnd },
 
-    // Load a function parameter. Knows which function it belongs to so that
-    // we can more easily flow type information in SCTP.
-    Param { idx: usize, parent_fun: FunId },
+    // Load a function parameter.
+    Param { idx: usize },
 
     // Get/set ivar values
     SetIvar { name: String, self_val: Opnd, val: Opnd },
@@ -452,8 +451,11 @@ fn sctp(prog: &Program) -> AnalysisResult
     func_returns.resize(num_funs, vec![]);
 
     for (insn_id, insn) in prog.insns.iter().enumerate() {
-        match insn.op {
-            Op::Return { val, parent_fun  } => func_returns[parent_fun.0].push(val),
+        match insn {
+            Insn { block_id, op: Op::Return { val } } => {
+                let parent_fun = prog.blocks[block_id.0].fun_id;
+                func_returns[parent_fun.0].push(*val)
+            }
             _ => {}
         }
     }
@@ -471,7 +473,6 @@ fn sctp(prog: &Program) -> AnalysisResult
 
             let Insn {op, block_id, ..} = &prog.insns[insn_id.0];
             let old_type = &types[insn_id.0];
-            let fun_id = prog.blocks[block_id.0].fun_id;
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
@@ -498,9 +499,10 @@ fn sctp(prog: &Program) -> AnalysisResult
                 block_worklist.push_back(*target);
                 continue;
             };
-            if let Op::Return { val, parent_fun } = op {
+            if let Op::Return { val } = op {
                 if type_of(val) == Type::Empty { continue; }
-                for send_insn in &called_by[parent_fun.0] {
+                let fun_id = prog.blocks[block_id.0].fun_id;
+                for send_insn in &called_by[fun_id.0] {
                     assert!(matches!(prog.insns[send_insn.0].op, Op::SendStatic { .. } | Op::SendDynamic { .. }));
                     let old_type = &types[send_insn.0];
                     if union(old_type, &type_of(&val)) != *old_type {
@@ -558,7 +560,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
-                Op::Param { idx, parent_fun } => {
+                Op::Param { idx } => {
                     // TODO(max): Pull from callers?
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
@@ -723,7 +725,7 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
                     mark_use(opnd);
                 }
             }
-            Op::Return { val, parent_fun } => {
+            Op::Return { val } => {
                 mark_use(val);
             }
             Op::IfTrue { val, .. } => {
@@ -806,7 +808,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 
             prog.push_insn(
                 entry_block,
-                Op::Return { val: Opnd::Const(const_val), parent_fun: fun_id }
+                Op::Return { val: Opnd::Const(const_val) }
             );
         } else {
             //println!("{}: callees: {:?}", fun_id, callees);
@@ -840,7 +842,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 
             prog.push_insn(
                 last_block,
-                Op::Return { val: sum_val, parent_fun: fun_id }
+                Op::Return { val: sum_val }
             );
         }
     }
@@ -877,7 +879,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
             prog.push_insn(
                 entry_block,
-                Op::Return { val: Opnd::Const(const_val), parent_fun: m_id }
+                Op::Return { val: Opnd::Const(const_val) }
             );
         }
     }
@@ -906,7 +908,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         // For each DAG node, going from leafs to root
         for (dag_idx, callees) in callees.into_iter().enumerate().rev() {
             let (fun_id, entry_block) = prog.new_fun();
-            let param_id = prog.push_insn(entry_block, Op::Param { idx: 0, parent_fun: fun_id });
+            let param_id = prog.push_insn(entry_block, Op::Param { idx: 0 });
 
             // Map function ids to DAG node indices
             fun_map.insert(dag_idx, fun_id);
@@ -951,7 +953,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
             prog.push_insn(
                 sum_block,
-                Op::Return { val: sum_val, parent_fun: fun_id }
+                Op::Return { val: sum_val }
             );
         }
 
@@ -1038,8 +1040,9 @@ fn main()
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
-        if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
-            if *parent_fun == prog.main {
+        if let Insn { block_id, op: Op::Return { val: Opnd::Insn(ret_id) } } = &insn {
+            let parent_fun = prog.blocks[block_id.0].fun_id;
+            if parent_fun == prog.main {
                 let ret_type = &result.insn_type[ret_id.0];
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
@@ -1088,8 +1091,9 @@ fn main()
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
-        if let Op::Return { val: Opnd::Insn(ret_id), parent_fun } = &insn.op {
-            if *parent_fun == prog.main {
+        if let Insn { block_id, op: Op::Return { val: Opnd::Insn(ret_id) } } = &insn {
+            let parent_fun = prog.blocks[block_id.0].fun_id;
+            if parent_fun == prog.main {
                 let ret_type = &result.insn_type[ret_id.0];
                 println!("{insn_id}: main return type: {:?}", ret_type);
 
@@ -1177,7 +1181,7 @@ mod compute_uses_tests {
     fn test_return() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
-        let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::Insn(add_id), parent_fun: fun_id });
+        let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::Insn(add_id) });
         let insn_uses = compute_uses(&mut prog);
         assert_eq!(insn_uses[add_id.0], vec![ret_id]);
         assert_eq!(insn_uses[ret_id.0], vec![]);
@@ -1374,7 +1378,7 @@ mod sctp_tests {
     fn test_one_return_flows_to_send() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (target, target_entry) = prog.new_fun();
-        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)), parent_fun: target });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![] });
         let result = sctp(&mut prog);
         assert_eq!(result.is_executable(target_entry), true);
@@ -1386,8 +1390,8 @@ mod sctp_tests {
     fn test_one_send_flows_to_param() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (target, target_entry) = prog.new_fun();
-        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
-        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id), parent_fun: target });
+        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0 });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
         let result = sctp(&mut prog);
         assert_eq!(result.is_executable(target_entry), true);
@@ -1398,8 +1402,8 @@ mod sctp_tests {
     fn test_two_sends_flow_to_param() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (target, target_entry) = prog.new_fun();
-        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
-        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id), parent_fun: target });
+        let param_id = prog.push_insn(target_entry, Op::Param { idx: 0 });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id) });
         let send0_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
         let send1_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(6))] });
         let result = sctp(&mut prog);
@@ -1411,10 +1415,10 @@ mod sctp_tests {
     fn test_send_multiple_args() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (target, target_entry) = prog.new_fun();
-        let param0_id = prog.push_insn(target_entry, Op::Param { idx: 0, parent_fun: target });
-        let param1_id = prog.push_insn(target_entry, Op::Param { idx: 1, parent_fun: target });
+        let param0_id = prog.push_insn(target_entry, Op::Param { idx: 0 });
+        let param1_id = prog.push_insn(target_entry, Op::Param { idx: 1 });
         let add_id = prog.push_insn(target_entry, Op::Add { v0: Opnd::Insn(param0_id), v1: Opnd::Insn(param1_id) });
-        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(add_id), parent_fun: target });
+        let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(add_id) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))] });
         let result = sctp(&mut prog);
         assert_eq!(result.is_executable(target_entry), true);
@@ -1446,7 +1450,7 @@ mod sctp_tests {
         prog.add_phi_arg(n, body_id, Opnd::Insn(n_inc));
         let cond = prog.push_insn(body_id, Op::LessThan { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(100)) });
         prog.push_insn(body_id, Op::IfTrue { val: Opnd::Insn(cond), then_block: body_id, else_block: end_id });
-        prog.push_insn(end_id, Op::Return { val: Opnd::Insn(n), parent_fun: fun_id });
+        prog.push_insn(end_id, Op::Return { val: Opnd::Insn(n) });
         let result = sctp(&mut prog);
 
         assert_eq!(result.is_executable(entry_id), true);
@@ -1485,16 +1489,16 @@ mod sctp_tests {
         let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
         let (fact_id, fact_entry) = prog.new_fun();
         let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Const(Value::Int(5))] });
-        let n = prog.push_insn(fact_entry, Op::Param { idx: 0, parent_fun: fact_id });
+        let n = prog.push_insn(fact_entry, Op::Param { idx: 0 });
         let lt = prog.push_insn(fact_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
-        let early_exit_id = prog.new_block(fun_id);
-        let do_mul_id = prog.new_block(fun_id);
+        let early_exit_id = prog.new_block(fact_id);
+        let do_mul_id = prog.new_block(fact_id);
         prog.push_insn(fact_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_mul_id });
-        prog.push_insn(early_exit_id, Op::Return { val: ONE, parent_fun: fact_id });
+        prog.push_insn(early_exit_id, Op::Return { val: ONE });
         let sub = prog.push_insn(do_mul_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
         let rec = prog.push_insn(do_mul_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Insn(sub)] });
         let mul = prog.push_insn(do_mul_id, Op::Mul { v0: Opnd::Insn(n), v1: Opnd::Insn(rec) });
-        prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul), parent_fun: fact_id });
+        prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul) });
         let result = sctp(&mut prog);
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(fact_entry), true);
@@ -1540,18 +1544,18 @@ mod sctp_tests {
         let (mut prog, fun_id, entry_id) = prog_with_empty_fun();
         let (fib_id, fib_entry) = prog.new_fun();
         let outside_call = prog.push_insn(entry_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Const(Value::Int(100))] });
-        let n = prog.push_insn(fib_entry, Op::Param { idx: 0, parent_fun: fib_id });
+        let n = prog.push_insn(fib_entry, Op::Param { idx: 0 });
         let lt = prog.push_insn(fib_entry, Op::LessThan { v0: Opnd::Insn(n), v1: TWO });
-        let early_exit_id = prog.new_block(fun_id);
-        let do_add_id = prog.new_block(fun_id);
+        let early_exit_id = prog.new_block(fib_id);
+        let do_add_id = prog.new_block(fib_id);
         prog.push_insn(fib_entry, Op::IfTrue { val: Opnd::Insn(lt), then_block: early_exit_id, else_block: do_add_id });
-        prog.push_insn(early_exit_id, Op::Return { val: Opnd::Insn(n), parent_fun: fib_id });
+        prog.push_insn(early_exit_id, Op::Return { val: Opnd::Insn(n) });
         let sub1 = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-1)) });
         let rec1 = prog.push_insn(do_add_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Insn(sub1)] });
         let sub2 = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(-2)) });
         let rec2 = prog.push_insn(do_add_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Insn(sub2)] });
         let add = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(rec1), v1: Opnd::Insn(rec2) });
-        prog.push_insn(do_add_id, Op::Return { val: Opnd::Insn(add), parent_fun: fib_id });
+        prog.push_insn(do_add_id, Op::Return { val: Opnd::Insn(add) });
         let result = sctp(&mut prog);
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(fib_entry), true);
@@ -1588,7 +1592,7 @@ mod sctp_tests {
         let outside_call = prog.push_insn(caller_entry_id, Op::SendStatic { target: callee_fun_id, args: vec![Opnd::Const(Value::Int(100))] });
         let dead_block_id = prog.new_block(callee_fun_id);
         let phi_block_id = prog.new_block(callee_fun_id);
-        let x = prog.push_insn(callee_entry_id, Op::Param { idx: 0, parent_fun: callee_fun_id });
+        let x = prog.push_insn(callee_entry_id, Op::Param { idx: 0 });
         prog.push_insn(callee_entry_id, Op::Jump { target: phi_block_id });
 
         let t = prog.push_insn(dead_block_id, Op::Add { v0: Opnd::Insn(x), v1: Opnd::Const(Value::Int(1)) });
@@ -1596,7 +1600,7 @@ mod sctp_tests {
         prog.push_insn(dead_block_id, Op::IfTrue { val: Opnd::Insn(t2), then_block: phi_block_id, else_block: dead_block_id });
 
         let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(callee_entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
-        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: callee_fun_id });
+        prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi) });
 
         let result = sctp(&mut prog);
         assert_eq!(result.type_of(phi), Type::Const(Value::Int(0)));
@@ -1607,7 +1611,7 @@ mod sctp_tests {
     fn test_new() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let obj = prog.push_insn(block_id, Op::New { class: ClassId(3) });
-        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(obj), parent_fun: fun_id });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(obj) });
         let result = sctp(&mut prog);
         assert_eq!(result.type_of(obj), Type::object(ClassId(3)));
     }
@@ -1618,7 +1622,7 @@ mod sctp_tests {
         let obj3 = prog.push_insn(block_id, Op::New { class: ClassId(3) });
         let obj4 = prog.push_insn(block_id, Op::New { class: ClassId(4) });
         let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj3)), (block_id, Opnd::Insn(obj4))] });
-        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi) });
         let result = sctp(&mut prog);
         assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(3), ClassId(4)]));
 
@@ -1629,8 +1633,8 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let class_id = prog.new_class();
         let (method_id, method_entry_id) = prog.new_method(class_id, "foo".into());
-        let param_id = prog.push_insn(method_entry_id, Op::Param { idx: 0, parent_fun: method_id });
-        let return_id = prog.push_insn(method_entry_id, Op::Return { val: Opnd::Insn(param_id), parent_fun: method_id });
+        let param_id = prog.push_insn(method_entry_id, Op::Param { idx: 0 });
+        let return_id = prog.push_insn(method_entry_id, Op::Return { val: Opnd::Insn(param_id) });
         let obj_id = prog.push_insn(block_id, Op::New { class: class_id });
         let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(obj_id), args: vec![Opnd::Const(Value::Int(5))] });
         let result = sctp(&mut prog);
@@ -1643,15 +1647,15 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let class0_id = prog.new_class();
         let (method0_id, method0_entry_id) = prog.new_method(class0_id, "foo".into());
-        let return0_id = prog.push_insn(method0_entry_id, Op::Return { val: Opnd::Const(Value::Int(3)), parent_fun: method0_id });
+        let return0_id = prog.push_insn(method0_entry_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let class1_id = prog.new_class();
         let (method1_id, method1_entry_id) = prog.new_method(class1_id, "foo".into());
-        let return1_id = prog.push_insn(method1_entry_id, Op::Return { val: Opnd::Const(Value::Int(4)), parent_fun: method1_id });
+        let return1_id = prog.push_insn(method1_entry_id, Op::Return { val: Opnd::Const(Value::Int(4)) });
         let obj0 = prog.push_insn(block_id, Op::New { class: class0_id });
         let obj1 = prog.push_insn(block_id, Op::New { class: class1_id });
         let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj0)), (block_id, Opnd::Insn(obj1))] });
         let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(phi), args: vec![Opnd::Const(Value::Int(5))] });
-        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi) });
         let result = sctp(&mut prog);
         assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(0), ClassId(1)]));
         assert_eq!(result.type_of(send_id), Type::Int);
