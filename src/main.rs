@@ -1628,4 +1628,23 @@ mod sctp_tests {
         assert_eq!(result.is_executable(method_entry_id), true);
         assert_eq!(result.type_of(param_id), Type::Const(Value::Int(5)));
     }
+
+    #[test]
+    fn test_send_dynamic_flows_to_all_potential_methods() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let class0_id = prog.new_class();
+        let (method0_id, method0_entry_id) = prog.new_method(class0_id, "foo".into());
+        let return0_id = prog.push_insn(method0_entry_id, Op::Return { val: Opnd::Const(Value::Int(3)), parent_fun: method0_id });
+        let class1_id = prog.new_class();
+        let (method1_id, method1_entry_id) = prog.new_method(class1_id, "foo".into());
+        let return1_id = prog.push_insn(method1_entry_id, Op::Return { val: Opnd::Const(Value::Int(4)), parent_fun: method1_id });
+        let obj0 = prog.push_insn(block_id, Op::New { class: class0_id });
+        let obj1 = prog.push_insn(block_id, Op::New { class: class1_id });
+        let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj0)), (block_id, Opnd::Insn(obj1))] });
+        let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(phi), args: vec![Opnd::Const(Value::Int(5))] });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi), parent_fun: fun_id });
+        let result = sctp(&mut prog);
+        assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(0), ClassId(1)]));
+        assert_eq!(result.type_of(send_id), Type::Int);
+    }
 }
