@@ -1808,11 +1808,12 @@ mod sctp_tests {
     fn test_analyze_set_ivar() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        prog.push_ivar(class, &"bar".into());
         prog.push_ivar(class, &"foo".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
-        assert_eq!(result, BitSet(1));
+        assert_eq!(result, BitSet(0b10));
     }
 }
