@@ -169,25 +169,37 @@ impl Type {
         assert!(!class_ids.is_empty(), "Use Type::Empty instead");
         Type::Object(HashSet::from_iter(class_ids.iter().map(|id| *id)))
     }
+
+    fn flatten(&self) -> Type {
+        match self {
+            Type::Const(Value::Nil) => Type::object(NIL_CLASS),
+            Type::Const(Value::Int(_)) => Type::object(INT_CLASS),
+            Type::Int => Type::object(INT_CLASS),
+            Type::Const(Value::Bool(true)) => Type::object(TRUE_CLASS),
+            Type::Const(Value::Bool(false)) => Type::object(FALSE_CLASS),
+            Type::Bool => Type::objects(&vec![TRUE_CLASS, FALSE_CLASS]),
+            _ => panic!("can't flatten {self:?}")
+        }
+    }
 }
 
 fn union(left: &Type, right: &Type) -> Type {
     match (left, right) {
         (Type::Any, _) | (_, Type::Any) => Type::Any,
         (Type::Empty, x) | (x, Type::Empty) => x.clone(),
-        (l, r) if l == r => l.clone(),
-        // Int
-        (Type::Int, Type::Const(Value::Int(_))) | (Type::Const(Value::Int(_)), Type::Int) => Type::Int,
-        (Type::Const(Value::Int(_)), Type::Const(Value::Int(_))) => Type::Int,
+        (Type::Const(Value::Nil), Type::Const(Value::Nil)) => left.clone(),
+        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) if l == r => left.clone(),
+        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Int,
+        (Type::Const(Value::Int(_)), Type::Int) | (Type::Int, Type::Const(Value::Int(_))) => Type::Int,
         (Type::Int, Type::Int) => Type::Int,
-        // Bool
-        (Type::Bool, Type::Const(Value::Bool(_))) | (Type::Const(Value::Bool(_)), Type::Bool) => Type::Bool,
-        (Type::Const(Value::Bool(_)), Type::Const(Value::Bool(_))) => Type::Bool,
+        (Type::Const(Value::Bool(l)), Type::Const(Value::Bool(r))) if l == r => left.clone(),
+        (Type::Const(Value::Bool(l)), Type::Const(Value::Bool(r))) => Type::Bool,
+        (Type::Const(Value::Bool(_)), Type::Bool) | (Type::Bool, Type::Const(Value::Bool(_))) => Type::Bool,
         (Type::Bool, Type::Bool) => Type::Bool,
-        // Object
         (Type::Object(l), Type::Object(r)) => Type::Object(l.union(r).map(|item| *item).collect()),
-        // Other
-        _ => Type::Any,
+        (x, Type::Object(_)) => union(&x.flatten(), right),
+        (Type::Object(_), x) => union(left, &x.flatten()),
+        (l, r) => union(&l.flatten(), &r.flatten()),
     }
 }
 
@@ -393,7 +405,6 @@ pub enum Value {
     Nil,
     Int(i64),
     Bool(bool),
-    Fun(FunId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -1339,7 +1350,7 @@ mod union_tests {
     fn test_const() {
         assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Int(3))), Type::Const(Value::Int(3)));
         assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Const(Value::Bool(true))), Type::Const(Value::Bool(true)));
-        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Bool(true))), Type::Any);
+        assert_eq!(union(&Type::Const(Value::Int(3)), &Type::Const(Value::Bool(true))), Type::objects(&vec![INT_CLASS, TRUE_CLASS]));
     }
 
     #[test]
@@ -1350,7 +1361,7 @@ mod union_tests {
         assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Const(Value::Bool(false))), Type::Bool);
         assert_eq!(union(&Type::Const(Value::Bool(true)), &Type::Bool), Type::Bool);
 
-        assert_eq!(union(&Type::Int, &Type::Bool), Type::Any);
+        assert_eq!(union(&Type::Int, &Type::Bool), Type::objects(&vec![INT_CLASS, TRUE_CLASS, FALSE_CLASS]));
     }
 
     #[test]
@@ -1488,7 +1499,7 @@ mod sctp_tests {
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Bool(true))), (block_id, Opnd::Const(Value::Int(4)))] });
         let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Insn(phi_id) });
         let result = sctp(&mut prog);
-        assert_eq!(result.type_of(phi_id), Type::Any);
+        assert_eq!(result.type_of(phi_id), Type::objects(&vec![TRUE_CLASS, INT_CLASS]));
         assert_eq!(result.type_of(isnil_id), Type::Bool);
     }
 
@@ -1526,7 +1537,7 @@ mod sctp_tests {
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, TRUE)] });
         let result = sctp(&mut prog);
-        assert_eq!(result.type_of(phi_id), Type::Any);
+        assert_eq!(result.type_of(phi_id), Type::objects(&vec![INT_CLASS, TRUE_CLASS]));
     }
 
     #[test]
