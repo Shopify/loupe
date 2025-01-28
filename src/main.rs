@@ -1070,6 +1070,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> Program
 {
     const METHODS_PER_CLASS: usize = 10;
+    const IVARS_PER_CLASS: usize = 10;
 
     let mut rng = LCG::new(1337);
 
@@ -1078,24 +1079,41 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     // Generate a large number of classes
     let mut classes = Vec::new();
     for _ in 0..num_classes {
-        let class_id = prog.new_class();
+        let (class_id, (ctor_id, ctor_entry)) = prog.new_class_with_ctor();
+        let self_id = prog.push_insn(ctor_entry, Op::SelfParam);
         classes.push(class_id);
+
+        // Create some ivars for this class
+        for j in 0..IVARS_PER_CLASS {
+            let ivar_name = format!("ivar_{}", j);
+            prog.push_ivar(class_id, ivar_name.clone());
+
+            // With some probability, initialize the ivar to a random integer
+            if rng.pct_prob(80) {
+                let val = Opnd::Const(Value::Int(rng.rand_usize(1, 7) as i64));
+                prog.push_insn(ctor_entry, Op::SetIvar { name: ivar_name, self_val: Opnd::Insn(self_id), val });
+            }
+        }
+
+        prog.push_insn(ctor_entry, Op::Return { val: NIL });
 
         // Create methods for this class
         for j in 0..METHODS_PER_CLASS {
             let (m_id, entry_block) = prog.new_method(class_id, format!("m{}", j));
+            let self_id = prog.push_insn(entry_block, Op::SelfParam);
 
-            // Return a random integer constant or nil
-            let const_val = if rng.rand_bool() {
+            let ret_val = if rng.rand_bool() {
+                Opnd::Insn(self_id)
+            } else if rng.rand_bool() {
                 let rand_int = rng.rand_usize(1, 500) as i64;
-                Value::Int(rand_int)
+                Opnd::Const(Value::Int(rand_int))
             } else {
-                Value::Nil
+                Opnd::Const(Value::Nil)
             };
 
             prog.push_insn(
                 entry_block,
-                Op::Return { val: Opnd::Const(const_val) }
+                Op::Return { val: ret_val }
             );
         }
     }
