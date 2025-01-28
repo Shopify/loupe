@@ -261,8 +261,9 @@ impl Program {
         (ClassId(id), ctor)
     }
 
-    fn push_ivar(&mut self, class: ClassId, name: &String) {
-        assert!(!self.classes[class.0].ivars.contains(name));
+    // Register a new ivar
+    fn push_ivar(&mut self, class: ClassId, name: String) {
+        assert!(!self.classes[class.0].ivars.contains(&name));
         self.classes[class.0].ivars.push(name.clone());
     }
 
@@ -1892,8 +1893,8 @@ mod sctp_tests {
     fn test_analyze_set_ivar() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
-        prog.push_ivar(class, &"bar".into());
-        prog.push_ivar(class, &"foo".into());
+        prog.push_ivar(class, "bar".into());
+        prog.push_ivar(class, "foo".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
@@ -1905,8 +1906,8 @@ mod sctp_tests {
     fn test_analyze_set_ivar_one_branch() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
-        prog.push_ivar(class, &"foo".into());
-        prog.push_ivar(class, &"bar".into());
+        prog.push_ivar(class, "foo".into());
+        prog.push_ivar(class, "bar".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
         let left = prog.new_block(ctor_fun_id);
         let right = prog.new_block(ctor_fun_id);
