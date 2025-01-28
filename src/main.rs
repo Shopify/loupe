@@ -100,7 +100,7 @@ pub struct Class {
     //name: String,
 
     // List of fields
-    //ivars: Vec<String>,
+    ivars: Vec<String>,
 
     // Types associated with each field
     //ivar_types: Vec<Type>,
@@ -214,8 +214,21 @@ impl Program {
     // Register a class and assign it an id
     pub fn new_class(&mut self) -> ClassId {
         let id = self.classes.len();
-        self.classes.push(Class { methods: Default::default(), ctor: None });
+        self.classes.push(Class { ivars: Default::default(), methods: Default::default(), ctor: None });
         ClassId(id)
+    }
+
+    // Register a class and assign it an id
+    pub fn new_class_with_ctor(&mut self) -> (ClassId, (FunId, BlockId)) {
+        let id = self.classes.len();
+        let ctor = self.new_fun();
+        self.classes.push(Class { ivars: Default::default(), methods: Default::default(), ctor: Some(ctor.0) });
+        (ClassId(id), ctor)
+    }
+
+    fn push_ivar(&mut self, class: ClassId, name: &String) {
+        assert!(!self.classes[class.0].ivars.contains(name));
+        self.classes[class.0].ivars.push(name.clone());
     }
 
     // Register a method associated with a class
@@ -289,6 +302,47 @@ impl Program {
 
     fn lookup_method(&self, class_id: ClassId, method_name: &String) -> Option<FunId> {
         self.classes[class_id.0].methods.get(method_name).copied()
+    }
+
+    pub fn rpo(&self, fun_id: FunId) -> Vec<BlockId> {
+        self.rpo_from(self.funs[fun_id.0].entry_block)
+    }
+
+    fn rpo_from(&self, block: BlockId) -> Vec<BlockId> {
+        let mut result = vec![];
+        let mut visited = HashSet::new();
+        self.po_traverse_from(block, &mut result, &mut visited);
+        result.reverse();
+        result
+    }
+
+    fn po_traverse_from(
+        &self,
+        block: BlockId,
+        result: &mut Vec<BlockId>,
+        visited: &mut HashSet<BlockId>,
+    ) {
+        visited.insert(block);
+        match &self.insns[self.blocks[block.0].insns.last().unwrap().0].op {
+            Op::Return { .. } => (),
+            Op::IfTrue { then_block, else_block, .. } => {
+                if !visited.contains(&then_block) {
+                    self.po_traverse_from(*then_block, result, visited);
+                }
+                if !visited.contains(&else_block) {
+                    self.po_traverse_from(*else_block, result, visited);
+                }
+            }
+            Op::Jump { target } => {
+                if !visited.contains(&target) {
+                    self.po_traverse_from(*target, result, visited);
+                }
+            }
+            insn => {
+                panic!("Invalid terminator {insn:?}")
+            }
+        }
+        result.push(block);
     }
 }
 
@@ -368,6 +422,8 @@ enum Op
     // on the Function object this instruction belongs to
     Return { val: Opnd },
 
+    // Load self parameter
+    SelfParam,
     // Load a function parameter.
     Param { idx: usize },
 
@@ -595,6 +651,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                     insn_worklist.push_back(*target_insn);
                                 }
                             }
+                            Op::SelfParam => panic!("no self parameter allowed in static send target"),
                             _ => {}
                         }
                     }
@@ -607,8 +664,13 @@ fn sctp(prog: &Program) -> AnalysisResult
                 Op::SendDynamic { method, self_val, args } => {
                     match type_of(self_val) {
                         Type::Object(class_ids) => {
-                            let targets = class_ids.iter().filter_map(|class_id| prog.lookup_method(*class_id, method));
-                            for target in targets {
+                            let targets = class_ids.iter().filter_map(|class_id| {
+                                match prog.lookup_method(*class_id, method) {
+                                    Some(fun_id) => Some((class_id, fun_id)),
+                                    _ => None,
+                                }
+                            });
+                            for (class_id, target) in targets {
                                 let target_entry_id = prog.entry_of(target);
                                 if called_by[target.0].insert(insn_id) {
                                     // Newly inserted; enqueue target and update flow relation
@@ -621,6 +683,9 @@ fn sctp(prog: &Program) -> AnalysisResult
                                                 assert!(idx < args.len());
                                                 flows_to[target_insn.0].insert(args[idx]);
                                             }
+                                            Op::SelfParam => {
+                                                flows_to[target_insn.0].insert(*self_val);
+                                            }
                                             _ => {}
                                         }
                                     }
@@ -632,6 +697,15 @@ fn sctp(prog: &Program) -> AnalysisResult
                                         Op::Param { idx, .. } => {
                                             assert!(idx < args.len());
                                             let arg_type = type_of(&args[idx]);
+                                            let old_type = &types[target_insn.0];
+                                            // TODO(max): Make some shortcuts for checking if union(old, new) != old
+                                            // For example, something like if new > old, this is an easy yes
+                                            if union(old_type, &arg_type) != *old_type {
+                                                insn_worklist.push_back(*target_insn);
+                                            }
+                                        }
+                                        Op::SelfParam => {
+                                            let arg_type = Type::object(*class_id);
                                             let old_type = &types[target_insn.0];
                                             // TODO(max): Make some shortcuts for checking if union(old, new) != old
                                             // For example, something like if new > old, this is an easy yes
@@ -731,6 +805,7 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
             Op::IfTrue { val, .. } => {
                 mark_use(val);
             }
+            Op::SelfParam => {}
             Op::Param { .. } => {}
             Op::Jump { .. } => {}
             Op::New { .. } => {}
@@ -745,6 +820,52 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
         }
     }
     uses.into_iter().map(|set| set.into_iter().collect()).collect()
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct BitSet(usize);
+
+impl BitSet {
+    fn set(&mut self, idx: usize) {
+        self.0 |= 1 << idx;
+    }
+}
+
+fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
+    let class = &prog.classes[class.0];
+    let ctor = class.ctor.unwrap();
+    let mut self_param = None;
+    'outer: for block_id in prog.rpo(ctor) {
+        for insn_id in &prog.blocks[block_id.0].insns {
+            match &prog.insns[insn_id.0].op {
+                Op::SelfParam => {
+                    self_param = Some(insn_id);
+                    break 'outer;
+                }
+                _ => {}
+            }
+        }
+    }
+    let self_param = match self_param {
+        Some(insn_id) => insn_id,
+        None => panic!("can't analyze ctor without SelfParam"),
+    };
+    let mut result = BitSet(0);
+    for block_id in prog.rpo(ctor) {
+        for insn_id in &prog.blocks[block_id.0].insns {
+            match &prog.insns[insn_id.0].op {
+                Op::SetIvar { name, self_val, val } if *self_val == Opnd::Insn(*self_param) => {
+                    let idx = match class.ivars.iter().position(|ivar| *ivar == *name) {
+                        Some(idx) => idx,
+                        None => panic!("Unknown ivar {name}"),
+                    };
+                    result.set(idx);
+                }
+                _ => {}
+            }
+        }
+    }
+    result
 }
 
 // Generate a random acyclic call graph
@@ -1671,5 +1792,27 @@ mod sctp_tests {
         let result = sctp(&mut prog);
         assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(0), ClassId(1)]));
         assert_eq!(result.type_of(send_id), Type::Int);
+    }
+
+    #[test]
+    fn test_analyze_ctor_empty() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        prog.push_insn(ctor_block_id, Op::SelfParam);
+        prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
+        let result = analyze_ctor(&prog, class);
+        assert_eq!(result, BitSet(0));
+    }
+
+    #[test]
+    fn test_analyze_set_ivar() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        prog.push_ivar(class, &"foo".into());
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
+        prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
+        let result = analyze_ctor(&prog, class);
+        assert_eq!(result, BitSet(1));
     }
 }
