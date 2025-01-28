@@ -844,7 +844,8 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     let ctor = class.ctor.unwrap();
     let mut self_param = None;
     // Find self parameter
-    for insn_id in &prog.blocks[prog.funs[ctor.0].entry_block.0].insns {
+    let entry = prog.funs[ctor.0].entry_block;
+    for insn_id in &prog.blocks[entry.0].insns {
         match &prog.insns[insn_id.0].op {
             Op::SelfParam => {
                 self_param = Some(insn_id);
@@ -871,7 +872,11 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     while changed {
         changed = false;
         for block in &blocks {
-            let mut state = preds[&block].iter().map(|block| block_out[block]).fold(BitSet(0), |acc, out| acc.and(out));
+            let mut state = if *block == entry {
+                BitSet(0)
+            } else {
+                preds[&block].iter().map(|block| block_out[block]).fold(BitSet::all_ones(), |acc, out| acc.and(out))
+            };
             for insn_id in &prog.blocks[block.0].insns {
                 match &prog.insns[insn_id.0].op {
                     Op::IfTrue { then_block, else_block, .. } => {
@@ -1858,5 +1863,26 @@ mod sctp_tests {
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
         assert_eq!(result, BitSet(0b10));
+    }
+
+    #[test]
+    fn test_analyze_set_ivar_one_branch() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        prog.push_ivar(class, &"foo".into());
+        prog.push_ivar(class, &"bar".into());
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        let left = prog.new_block(ctor_fun_id);
+        let right = prog.new_block(ctor_fun_id);
+        prog.push_insn(ctor_block_id, Op::IfTrue { val: Opnd::Const(Value::Int(3)), then_block: left, else_block: right });
+        prog.push_insn(left, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
+        prog.push_insn(left, Op::SetIvar { name: "bar".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
+        let join = prog.new_block(ctor_fun_id);
+        prog.push_insn(left, Op::Jump { target: join });
+        prog.push_insn(right, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
+        prog.push_insn(right, Op::Jump { target: join });
+        prog.push_insn(join, Op::Return { val: Opnd::Const(Value::Int(3)) });
+        let result = analyze_ctor(&prog, class);
+        assert_eq!(result, BitSet(0b01));
     }
 }
