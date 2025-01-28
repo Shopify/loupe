@@ -868,9 +868,8 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
         block_out.insert(*block, BitSet(0));
     }
     // Do abstract interpretation to flow definite ivar assignment
-    let mut changed = true;
-    while changed {
-        changed = false;
+    loop {
+        let mut changed = false;
         for block in &blocks {
             // Entrypoint does not have any preds so in that special case we give it BitSet(0)
             let mut state =  preds[&block].iter().map(|block| block_out[block]).reduce(|acc, out| acc.and(out)).unwrap_or(BitSet(0));
@@ -898,6 +897,9 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
                 block_out.insert(*block, state);
                 changed = true;
             }
+        }
+        if !changed {
+            break;
         }
     }
     // Summarize the definite assignment by and-ing all the Return states together
