@@ -170,14 +170,15 @@ impl Type {
         Type::Object(HashSet::from_iter(class_ids.iter().map(|id| *id)))
     }
 
-    fn flatten(&self) -> Type {
+    #[inline]
+    fn flatten(&self) -> Vec<ClassId> {
         match self {
-            Type::Const(Value::Nil) => Type::object(NIL_CLASS),
-            Type::Const(Value::Int(_)) => Type::object(INT_CLASS),
-            Type::Int => Type::object(INT_CLASS),
-            Type::Const(Value::Bool(true)) => Type::object(TRUE_CLASS),
-            Type::Const(Value::Bool(false)) => Type::object(FALSE_CLASS),
-            Type::Bool => Type::objects(&vec![TRUE_CLASS, FALSE_CLASS]),
+            Type::Const(Value::Nil) => vec![NIL_CLASS],
+            Type::Const(Value::Int(_)) => vec![INT_CLASS],
+            Type::Int => vec![INT_CLASS],
+            Type::Const(Value::Bool(true)) => vec![TRUE_CLASS],
+            Type::Const(Value::Bool(false)) => vec![FALSE_CLASS],
+            Type::Bool => vec![TRUE_CLASS, FALSE_CLASS],
             _ => panic!("can't flatten {self:?}")
         }
     }
@@ -197,9 +198,16 @@ fn union(left: &Type, right: &Type) -> Type {
         (Type::Const(Value::Bool(_)), Type::Bool) | (Type::Bool, Type::Const(Value::Bool(_))) => Type::Bool,
         (Type::Bool, Type::Bool) => Type::Bool,
         (Type::Object(l), Type::Object(r)) => Type::Object(l.union(r).map(|item| *item).collect()),
-        (x, Type::Object(_)) => union(&x.flatten(), right),
-        (Type::Object(_), x) => union(left, &x.flatten()),
-        (l, r) => union(&l.flatten(), &r.flatten()),
+        (x, Type::Object(set)) | (Type::Object(set), x) => {
+            let mut result = set.clone();
+            result.extend(x.flatten());
+            Type::Object(result)
+        }
+        (l, r) => {
+            let mut result = HashSet::from_iter(l.flatten());
+            result.extend(r.flatten());
+            Type::Object(result)
+        }
     }
 }
 
