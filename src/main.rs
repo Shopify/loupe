@@ -99,7 +99,7 @@ impl LCG {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub struct Class {
     //name: String,
 
@@ -107,7 +107,7 @@ pub struct Class {
     ivars: Vec<String>,
 
     // Types associated with each field
-    //ivar_types: Vec<Type>,
+    ivar_types: Vec<Type>,
 
     // List of methods
     methods: HashMap<String, FunId>,
@@ -249,7 +249,12 @@ impl Program {
     // Register a class and assign it an id
     pub fn new_class(&mut self) -> ClassId {
         let id = self.classes.len();
-        self.classes.push(Class { ivars: Default::default(), methods: Default::default(), ctor: None });
+        self.classes.push(Class {
+            ivars: Default::default(),
+            ivar_types: Default::default(),
+            methods: Default::default(),
+            ctor: None
+        });
         ClassId(id)
     }
 
@@ -257,7 +262,12 @@ impl Program {
     pub fn new_class_with_ctor(&mut self) -> (ClassId, (FunId, BlockId)) {
         let id = self.classes.len();
         let ctor = self.new_fun();
-        self.classes.push(Class { ivars: Default::default(), methods: Default::default(), ctor: Some(ctor.0) });
+        self.classes.push(Class {
+            ivars: Default::default(),
+            ivar_types: Default::default(),
+            methods: Default::default(),
+            ctor: Some(ctor.0)
+        });
         (ClassId(id), ctor)
     }
 
