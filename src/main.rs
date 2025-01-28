@@ -875,6 +875,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
             let mut state = if *block == entry {
                 BitSet(0)
             } else {
+                assert!(preds[&block].len() >= 1);
                 preds[&block].iter().map(|block| block_out[block]).fold(BitSet::all_ones(), |acc, out| acc.and(out))
             };
             for insn_id in &prog.blocks[block.0].insns {
