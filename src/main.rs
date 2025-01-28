@@ -655,7 +655,6 @@ fn sctp(prog: &Program) -> AnalysisResult
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
                 Op::Param { idx } => {
-                    // TODO(max): Pull from callers?
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::SendStatic { target, args } => {
@@ -673,6 +672,9 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 }
                                 _ => {}
                             }
+                        }
+                        for val in &func_returns[target.0] {
+                            flows_to[insn_id.0].insert(*val);
                         }
                         // TODO(max): Mark all Insn operands as being used by Param?
                     }
@@ -692,9 +694,6 @@ fn sctp(prog: &Program) -> AnalysisResult
                             Op::SelfParam => panic!("no self parameter allowed in static send target"),
                             _ => {}
                         }
-                    }
-                    for val in &func_returns[target.0] {
-                        flows_to[insn_id.0].insert(*val);
                     }
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
@@ -727,7 +726,9 @@ fn sctp(prog: &Program) -> AnalysisResult
                                             _ => {}
                                         }
                                     }
-                                    // TODO(max): Mark all Insn operands as being used by Param?
+                                    for val in &func_returns[target.0] {
+                                        flows_to[insn_id.0].insert(*val);
+                                    }
                                 }
                                 // If we have any new information for the parameters, enqueue them
                                 for target_insn in &prog.blocks[target_entry_id.0].insns {
@@ -753,9 +754,6 @@ fn sctp(prog: &Program) -> AnalysisResult
                                         }
                                         _ => {}
                                     }
-                                }
-                                for val in &func_returns[target.0] {
-                                    flows_to[insn_id.0].insert(*val);
                                 }
                             }
                             flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
