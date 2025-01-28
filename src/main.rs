@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
 use std::cmp::{min, max};
 
 // TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
@@ -123,7 +123,7 @@ impl std::fmt::Display for ClassId {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, PartialOrd, Ord)]
 pub struct ClassId(usize);
 // TODO(max): Remove derive(Default) for FunId
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
@@ -160,18 +160,18 @@ enum Type
     Const(Value),
     Int,  // Special case of Object(INT_CLASS)
     Bool,  // Special case of Object(TRUE_CLASS, FALSE_CLASS)
-    Object(HashSet<ClassId>),
+    Object(BTreeSet<ClassId>),
     Any,
 }
 
 impl Type {
     fn object(class_id: ClassId) -> Type {
-        Type::Object(HashSet::from([class_id]))
+        Type::Object(BTreeSet::from([class_id]))
     }
 
     fn objects(class_ids: &Vec<ClassId>) -> Type {
         assert!(!class_ids.is_empty(), "Use Type::Empty instead");
-        Type::Object(HashSet::from_iter(class_ids.iter().map(|id| *id)))
+        Type::Object(BTreeSet::from_iter(class_ids.iter().map(|id| *id)))
     }
 
     #[inline]
@@ -207,7 +207,7 @@ fn union(left: &Type, right: &Type) -> Type {
             result.insert(x.class_id());
             Type::Object(result)
         }
-        (l, r) => Type::Object(HashSet::from_iter([l.class_id(), r.class_id()]))
+        (l, r) => Type::Object(BTreeSet::from_iter([l.class_id(), r.class_id()]))
     }
 }
 
