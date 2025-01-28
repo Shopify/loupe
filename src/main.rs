@@ -570,6 +570,7 @@ fn sctp(prog: &Program) -> AnalysisResult
             let type_of = |opnd: &Opnd| -> Type {
                 match opnd {
                     Opnd::Const(v) => Type::Const(*v),
+                    // TODO(max): Figure out how to stop cloning here
                     Opnd::Insn(insn_id) => types[insn_id.0].clone(),
                 }
             };
