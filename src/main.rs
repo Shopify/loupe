@@ -95,7 +95,7 @@ impl LCG {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Class {
     //name: String,
 
@@ -110,7 +110,7 @@ pub struct Class {
 
     // KISS, ignore for now
     // Constructor method
-    //ctor: FunId,
+    ctor: Option<FunId>,
 }
 
 impl std::fmt::Display for ClassId {
@@ -214,7 +214,7 @@ impl Program {
     // Register a class and assign it an id
     pub fn new_class(&mut self) -> ClassId {
         let id = self.classes.len();
-        self.classes.push(Class::default());
+        self.classes.push(Class { methods: Default::default(), ctor: None });
         ClassId(id)
     }
 
