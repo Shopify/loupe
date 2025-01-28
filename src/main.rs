@@ -826,8 +826,16 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
 pub struct BitSet(usize);
 
 impl BitSet {
+    fn all_ones() -> BitSet {
+        BitSet(std::usize::MAX)
+    }
+
     fn set(&mut self, idx: usize) {
         self.0 |= 1 << idx;
+    }
+
+    fn and(&self, other: BitSet) -> BitSet {
+        BitSet(self.0 & other.0)
     }
 }
 
@@ -835,34 +843,71 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     let class = &prog.classes[class.0];
     let ctor = class.ctor.unwrap();
     let mut self_param = None;
-    'outer: for block_id in prog.rpo(ctor) {
-        for insn_id in &prog.blocks[block_id.0].insns {
-            match &prog.insns[insn_id.0].op {
-                Op::SelfParam => {
-                    self_param = Some(insn_id);
-                    break 'outer;
-                }
-                _ => {}
+    // Find self parameter
+    for insn_id in &prog.blocks[prog.funs[ctor.0].entry_block.0].insns {
+        match &prog.insns[insn_id.0].op {
+            Op::SelfParam => {
+                self_param = Some(insn_id);
+                break;
             }
+            _ => {}
         }
     }
     let self_param = match self_param {
         Some(insn_id) => insn_id,
         None => panic!("can't analyze ctor without SelfParam"),
     };
-    let mut result = BitSet(0);
-    for block_id in prog.rpo(ctor) {
-        for insn_id in &prog.blocks[block_id.0].insns {
-            match &prog.insns[insn_id.0].op {
-                Op::SetIvar { name, self_val, val } if *self_val == Opnd::Insn(*self_param) => {
-                    let idx = match class.ivars.iter().position(|ivar| *ivar == *name) {
-                        Some(idx) => idx,
-                        None => panic!("Unknown ivar {name}"),
-                    };
-                    result.set(idx);
+    let blocks = prog.rpo(ctor);
+    let mut preds: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+    for block in &blocks {
+        preds.insert(*block, HashSet::new());
+    }
+    let mut block_out: HashMap<BlockId, BitSet> = HashMap::new();
+    for block in &blocks {
+        block_out.insert(*block, BitSet(0));
+    }
+    // Do abstract interpretation to flow definite ivar assignment
+    let mut changed = true;
+    while changed {
+        println!("iter!");
+        changed = false;
+        for block in &blocks {
+            let mut state = preds[&block].iter().map(|block| block_out[block]).fold(BitSet(0), |acc, out| acc.and(out));
+            for insn_id in &prog.blocks[block.0].insns {
+                match &prog.insns[insn_id.0].op {
+                    Op::IfTrue { then_block, else_block, .. } => {
+                        preds.get_mut(then_block).unwrap().insert(*block);
+                        preds.get_mut(else_block).unwrap().insert(*block);
+                    }
+                    Op::Jump { target } => {
+                        preds.get_mut(target).unwrap().insert(*block);
+                    }
+                    Op::SetIvar { name, self_val, val } if *self_val == Opnd::Insn(*self_param) => {
+                        let idx = match class.ivars.iter().position(|ivar| *ivar == *name) {
+                            // TODO(max): Check if index is too big to represent in BitSet
+                            Some(idx) => idx,
+                            None => panic!("Unknown ivar {name}"),
+                        };
+                        println!("setting idx {idx}");
+                        state.set(idx);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
+            if block_out[block] != state {
+                block_out.insert(*block, state);
+                changed = true;
+            }
+        }
+    }
+    // Summarize the definite assignment by and-ing all the Return states together
+    let mut result = BitSet::all_ones();
+    for block in &blocks {
+        match &prog.insns[prog.blocks[block.0].insns.last().unwrap().0].op {
+            Op::Return { .. } => {
+                result = result.and(block_out[block]);
+            }
+            _ => {}
         }
     }
     result
