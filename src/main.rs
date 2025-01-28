@@ -154,8 +154,8 @@ enum Type
     // Empty is the empty set (no info propagated yet or unreachable)
     Empty,
     Const(Value),
-    Int,
-    Bool,
+    Int,  // Special case of Object(INT_CLASS)
+    Bool,  // Special case of Object(TRUE_CLASS, FALSE_CLASS)
     Object(HashSet<ClassId>),
     Any,
 }
@@ -192,7 +192,7 @@ fn union(left: &Type, right: &Type) -> Type {
 }
 
 // Home of our interprocedural CFG
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct Program
 {
     classes: Vec<Class>,
@@ -208,6 +208,21 @@ struct Program
 
     // Main/entry function
     main: FunId,
+}
+
+impl Default for Program {
+    fn default() -> Program {
+        let mut result = Program { classes: vec![], funs: vec![], blocks: vec![], blocks_terminated: HashSet::new(), insns: vec![], main: FunId(0) };
+        let c = result.new_class();
+        assert_eq!(c, NIL_CLASS);
+        let c = result.new_class();
+        assert_eq!(c, INT_CLASS);
+        let c = result.new_class();
+        assert_eq!(c, TRUE_CLASS);
+        let c = result.new_class();
+        assert_eq!(c, FALSE_CLASS);
+        result
+    }
 }
 
 impl Program {
@@ -398,6 +413,10 @@ const ONE: Opnd = Opnd::Const(Value::Int(1));
 const TWO: Opnd = Opnd::Const(Value::Int(2));
 const FALSE: Opnd = Opnd::Const(Value::Bool(false));
 const TRUE: Opnd = Opnd::Const(Value::Bool(true));
+const NIL_CLASS: ClassId = ClassId(0);
+const INT_CLASS: ClassId = ClassId(1);
+const TRUE_CLASS: ClassId = ClassId(2);
+const FALSE_CLASS: ClassId = ClassId(3);
 
 #[derive(Debug)]
 enum Op
@@ -1837,7 +1856,7 @@ mod sctp_tests {
         let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(phi), args: vec![Opnd::Const(Value::Int(5))] });
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi) });
         let result = sctp(&mut prog);
-        assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(0), ClassId(1)]));
+        assert_eq!(result.type_of(phi), Type::objects(&vec![class0_id, class1_id]));
         assert_eq!(result.type_of(send_id), Type::Int);
     }
 
