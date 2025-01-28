@@ -869,7 +869,6 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     // Do abstract interpretation to flow definite ivar assignment
     let mut changed = true;
     while changed {
-        println!("iter!");
         changed = false;
         for block in &blocks {
             let mut state = preds[&block].iter().map(|block| block_out[block]).fold(BitSet(0), |acc, out| acc.and(out));
@@ -888,7 +887,6 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
                             Some(idx) => idx,
                             None => panic!("Unknown ivar {name}"),
                         };
-                        println!("setting idx {idx}");
                         state.set(idx);
                     }
                     _ => {}
