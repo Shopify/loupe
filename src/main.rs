@@ -6,6 +6,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::cmp::{min, max};
 
+// TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
+// around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
+// protection.
+
 pub struct LCG {
     state: u64,
     // Parameters from "Numerical Recipes"
