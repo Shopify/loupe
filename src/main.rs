@@ -872,12 +872,8 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     while changed {
         changed = false;
         for block in &blocks {
-            let mut state = if *block == entry {
-                BitSet(0)
-            } else {
-                assert!(preds[&block].len() >= 1);
-                preds[&block].iter().map(|block| block_out[block]).fold(BitSet::all_ones(), |acc, out| acc.and(out))
-            };
+            // Entrypoint does not have any preds so in that special case we give it BitSet(0)
+            let mut state =  preds[&block].iter().map(|block| block_out[block]).reduce(|acc, out| acc.and(out)).unwrap_or(BitSet(0));
             for insn_id in &prog.blocks[block.0].insns {
                 match &prog.insns[insn_id.0].op {
                     Op::IfTrue { then_block, else_block, .. } => {
