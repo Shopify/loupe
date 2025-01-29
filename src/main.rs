@@ -662,6 +662,9 @@ fn sctp(prog: &Program) -> AnalysisResult
                         _ => Type::Bool,
                     }
                 }
+                Op::SelfParam => {
+                    flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                }
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
