@@ -44,7 +44,7 @@ impl LCG {
     }
 
     // Choose a random index in [0, max[
-    pub fn rand_idx(&mut self, max: usize) -> usize {
+    pub fn rand_index(&mut self, max: usize) -> usize {
         (self.next_u32() as usize) % max
     }
 
@@ -56,14 +56,14 @@ impl LCG {
 
     // Returns true with a specific percentage of probability
     pub fn pct_prob(&mut self, percent: usize) -> bool {
-        let idx = self.rand_idx(100);
+        let idx = self.rand_index(100);
         idx < percent
     }
 
     // Pick a random element from a slice
     pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
         assert!(!slice.is_empty());
-        &slice[self.rand_idx(slice.len())]
+        &slice[self.rand_index(slice.len())]
     }
 
     // Generate a random float between 0 and 1
@@ -1105,8 +1105,15 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
             let (m_id, entry_block) = prog.new_method(class_id, format!("m{}", j));
             let self_id = prog.push_insn(entry_block, Op::SelfParam);
 
+            // TODO: implement increment op with setivar as well?
+            // 25% of the time
+
             let ret_val = if rng.rand_bool() {
-                Opnd::Insn(self_id)
+                // Choose a random ivar
+                let ivar_idx = rng.rand_index(10);
+                let ivar_name = format!("ivar_{}", ivar_idx);
+                let getivar_id = prog.push_insn(entry_block, Op::GetIvar { name: ivar_name, self_val: Opnd::Insn(self_id) });
+                Opnd::Insn(getivar_id)
             } else if rng.rand_bool() {
                 let rand_int = rng.rand_usize(1, 500) as i64;
                 Opnd::Const(Value::Int(rand_int))
