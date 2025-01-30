@@ -432,7 +432,7 @@ struct Block
 }
 
 // Remove this if the only thing we store is op
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Insn
 {
     block_id: BlockId,
@@ -468,7 +468,7 @@ const INT_CLASS: ClassId = ClassId(1);
 const TRUE_CLASS: ClassId = ClassId(2);
 const FALSE_CLASS: ClassId = ClassId(3);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Op
 {
     Phi { ins: Vec<(BlockId, Opnd)> },
@@ -1426,6 +1426,125 @@ fn main()
     println!("itr count: {}", result.itr_count);
 }
 
+#[derive(Debug, PartialEq)]
+enum Token {
+    Def,
+    Class,
+    End,
+    Ident(String),
+    LParen,
+    RParen,
+    Comma,
+    Plus,
+}
+
+struct Lexer<'a> {
+    input: std::iter::Peekable<std::str::Chars<'a>>,
+}
+
+impl<'a> Lexer<'a> {
+    fn new(source: &'a str) -> Lexer<'a> {
+        Lexer { input: source.chars().peekable() }
+    }
+
+    fn read_word(&mut self, start: char) -> Token {
+        let mut result: String = start.into();
+        while let Some(c) = self.input.peek() {
+            if c.is_alphabetic() {
+                result.push(*c);
+                self.input.next();
+            } else {
+                break;
+            }
+        }
+        if result == "def" {
+            Token::Def
+        } else if result == "end" {
+            Token::End
+        } else {
+            Token::Ident(result)
+        }
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token;
+    fn next(&mut self) -> Option<Token> {
+        let c = self.input.find(|c| !c.is_whitespace());
+        if c.is_none() { return None; }
+        let c = c.unwrap();
+        if c.is_alphabetic() {
+            Some(self.read_word(c))
+        } else if c == '(' {
+            Some(Token::LParen)
+        } else if c == ')' {
+            Some(Token::RParen)
+        } else if c == ',' {
+            Some(Token::Comma)
+        } else if c == '+' {
+            Some(Token::Plus)
+        } else {
+            panic!("unhandled char {c}");
+        }
+    }
+}
+
+struct Parser<'a> {
+    input: std::iter::Peekable<Lexer<'a>>,
+    prog: Program,
+}
+
+impl<'a> Parser<'a> {
+    fn from_lexer(lexer: Lexer) -> Parser {
+        Parser { input: lexer.peekable(), prog: Program::default() }
+    }
+
+    fn parse_program(&mut self) {
+        while let Some(token) = self.input.next() {
+            if token != Token::Def {
+                panic!("Unexpected token {token:?}");
+            }
+            self.parse_fun();
+        }
+    }
+
+    fn expect(&mut self, expected: Token) {
+        match self.input.next() {
+            Some(actual) if actual == expected => {},
+            actual => panic!("Unexpected token {actual:?}"),
+        }
+    }
+
+    fn parse_fun(&mut self) {
+        let (fun_id, block_id) = match self.input.next() {
+            Some(Token::Ident(name)) => self.prog.new_fun_with_name(name),
+            token => panic!("Unexpected token {token:?}"),
+        };
+        self.expect(Token::LParen);
+        let mut params: Vec<String> = vec![];
+        loop {
+            match self.input.peek () {
+                Some(Token::RParen) => { break; }
+                Some(Token::Ident(param)) => {
+                    params.push(param.clone());
+                    self.input.next();
+                }
+                token => panic!("Unexpected token {token:?}"),
+            }
+            match self.input.peek() {
+                Some(Token::Comma) => { self.input.next(); }
+                _ => { break; }
+            }
+        }
+        self.expect(Token::RParen);
+        for (idx, param) in params.iter().enumerate() {
+            self.prog.push_insn(block_id, Op::Param { idx });
+        }
+        self.prog.push_insn(block_id, Op::Return { val: Opnd::Const(Value::Nil) });
+        self.expect(Token::End);
+    }
+}
+
 #[cfg(test)]
 mod union_tests {
     use super::*;
@@ -2041,5 +2160,95 @@ mod sctp_tests {
         // TODO(max)
         // assert_eq!(result.type_of(getivar_foo_id), Type::Int);
         // assert_eq!(result.type_of(getivar_bar_id), Type::Int);
+    }
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_returns_eof() {
+        let mut lexer = Lexer::new("");
+        assert_eq!(lexer.next(), None);
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_def() {
+        let mut lexer = Lexer::new("   def");
+        assert_eq!(lexer.next(), Some(Token::Def));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_end() {
+        let mut lexer = Lexer::new("   end");
+        assert_eq!(lexer.next(), Some(Token::End));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_ident() {
+        let mut lexer = Lexer::new("   abc");
+        assert_eq!(lexer.next(), Some(Token::Ident("abc".into())));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_parens() {
+        let mut lexer = Lexer::new("   ()");
+        assert_eq!(lexer.next(), Some(Token::LParen));
+        assert_eq!(lexer.next(), Some(Token::RParen));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_comma() {
+        let mut lexer = Lexer::new("   ,");
+        assert_eq!(lexer.next(), Some(Token::Comma));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_plus() {
+        let mut lexer = Lexer::new("   +");
+        assert_eq!(lexer.next(), Some(Token::Plus));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_function() {
+        let mut lexer = Lexer::new("def foo(a, b) a+b end");
+        use Token::*;
+        assert_eq!(lexer.collect::<Vec<_>>(), vec![
+            Def, Ident("foo".into()), LParen, Ident("a".into()), Comma, Ident("b".into()), RParen,
+            Ident("a".into()), Plus, Ident("b".into()),
+            End
+        ]);
+    }
+
+    #[test]
+    fn test_parse_empty_function() {
+        let mut lexer = Lexer::new("def foo() end");
+        use Token::*;
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.funs.len(), 1);
+        assert_eq!(parser.prog.funs[0].name, "foo");
+    }
+
+    #[test]
+    fn test_parse_function_with_params() {
+        let mut lexer = Lexer::new("def foo(a, b) end");
+        use Token::*;
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[2].op, Op::Return { val: Opnd::Const(Value::Nil) });
     }
 }
