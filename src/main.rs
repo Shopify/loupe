@@ -107,9 +107,6 @@ pub struct Class {
     // List of fields
     ivars: Vec<String>,
 
-    // Types associated with each field
-    ivar_types: Vec<Type>,
-
     // List of methods
     methods: HashMap<String, FunId>,
 
@@ -269,7 +266,6 @@ impl Program {
         let id = self.classes.len();
         self.classes.push(Class {
             ivars: Default::default(),
-            ivar_types: Default::default(),
             methods: Default::default(),
             ctor: None
         });
@@ -282,8 +278,7 @@ impl Program {
         let ctor = self.new_fun();
         self.classes.push(Class {
             ivars: Default::default(),
-            ivar_types: Default::default(),
-            methods: Default::default(),
+            methods: HashMap::from([ ("initialize".into(), ctor.0) ]),
             ctor: Some(ctor.0)
         });
         (ClassId(id), ctor)
@@ -350,6 +345,17 @@ impl Program {
         self.blocks[block.0].insns.push(id);
 
         id
+    }
+
+    fn create_instance(&mut self, block_id: BlockId, class_id: ClassId) -> InsnId {
+        let obj = self.push_insn(block_id, Op::New { class: class_id });
+        match self.classes[class_id.0].ctor {
+            Some(fun_id) => {
+                self.push_insn(block_id, Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(obj), args: vec![] });
+            }
+            _ => {}
+        }
+        obj
     }
 
     fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
@@ -573,6 +579,23 @@ fn sctp(prog: &Program) -> AnalysisResult
     let mut func_returns: Vec<Vec<Opnd>> = Vec::with_capacity(num_funs);
     func_returns.resize(num_funs, vec![]);
 
+    // Analyze constructors of every class to determine which ivars are definitely initialized at
+    // the end of the constructor.
+    // Map of ClassId->bitset of definitely initialized ivars. Used jointly with ivar types.
+    let ivar_initialized: Vec<SmallBitSet> = (0..prog.classes.len()).map(|class_id|
+        analyze_ctor(prog, ClassId(class_id))
+    ).collect();
+
+    // Map of ClassId->ivar types. Used jointly with ivar initialization bitsets.
+    let num_classes = prog.classes.len();
+    let mut ivar_types: Vec<HashMap<String, Type>> = Vec::with_capacity(num_classes);
+    ivar_types.resize(num_classes, HashMap::new());
+    for (class_id, class) in prog.classes.iter().enumerate() {
+        for ivar in &class.ivars {
+            ivar_types[class_id].insert(ivar.clone(), Type::Empty);
+        }
+    }
+
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         match insn {
             Insn { block_id, op: Op::Return { val } } => {
@@ -689,6 +712,29 @@ fn sctp(prog: &Program) -> AnalysisResult
                 }
                 Op::Param { idx } => {
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
+                }
+                Op::GetIvar { self_val, name } => {
+                    let result = match type_of(self_val) {
+                        Type::Object(classes) => {
+                            classes.iter().fold(Type::Empty, |acc, class_id| union(&acc, &ivar_types[class_id][name]))
+                        }
+                        ty => panic!("getivar on non-Object type {ty:?}"),
+                    };
+                    result
+                }
+                Op::SetIvar { self_val, name, val } => {
+                    // TODO(max): Somehow get a flows_to relationship here so the set enqueues the get later
+                    match type_of(self_val) {
+                        Type::Object(classes) => {
+                            let val_ty = type_of(val);
+                            for class_id in classes.iter() {
+                                let mut old_type = ivar_types[class_id].get_mut(name).unwrap();
+                                *old_type = union(old_type, &val_ty);
+                            }
+                        }
+                        ty => panic!("setivar on non-Object type {ty:?}"),
+                    }
+                    Type::Empty
                 }
                 Op::SendStatic { target, args } => {
                     let target_entry_id = prog.entry_of(*target);
@@ -911,7 +957,10 @@ impl SmallBitSet {
 
 fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
     let class = &prog.classes[class.0];
-    let ctor = class.ctor.unwrap();
+    let ctor = match class.ctor {
+        Some(ctor) => ctor,
+        None => { return SmallBitSet(0); }
+    };
     let mut self_param = None;
     // Find self parameter
     let entry = prog.funs[ctor.0].entry_block;
@@ -1152,10 +1201,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     // Create one instance of each class
     let mut objects = Vec::new();
     for class_id in classes {
-        let obj = prog.push_insn(
-            main_entry,
-            Op::New { class: class_id }
-        );
+        let obj = prog.create_instance(main_entry, class_id);
         objects.push(obj);
     }
 
@@ -1329,6 +1375,12 @@ fn main()
         }
     }
 
+    println!("Total function count: {}", prog.funs.len());
+    println!("Total instruction count: {}", prog.insns.len());
+    println!("analysis time: {:.1} ms", time_ms);
+    println!("itr count: {}", result.itr_count);
+    println!();
+
     // Check that all global functions (but not methods) are marked executable
     for fun in &prog.funs {
         let entry_id = fun.entry_block;
@@ -1337,12 +1389,6 @@ fn main()
             panic!("all function entry blocks should be executable");
         }
     }
-
-    println!("Total function count: {}", prog.funs.len());
-    println!("Total instruction count: {}", prog.insns.len());
-    println!("analysis time: {:.1} ms", time_ms);
-    println!("itr count: {}", result.itr_count);
-    println!();
 
     //print_prog(&prog, Some(result));
 
@@ -1977,5 +2023,27 @@ mod sctp_tests {
         prog.push_insn(join, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
         assert_eq!(result, SmallBitSet(0b01));
+    }
+
+    #[test]
+    fn test_ivar_types() {
+        let (mut prog, fun_id, block_id) = prog_with_empty_fun();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        prog.push_ivar(class, "foo".into());
+        prog.push_ivar(class, "bar".into());
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
+        prog.push_insn(ctor_block_id, Op::SetIvar { name: "bar".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Bool(true)) });
+        prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
+
+        let obj = prog.create_instance(block_id, class);
+        let getivar_foo_id = prog.push_insn(block_id, Op::GetIvar { name: "foo".into(), self_val: Opnd::Insn(obj) });
+        let getivar_bar_id = prog.push_insn(block_id, Op::GetIvar { name: "bar".into(), self_val: Opnd::Insn(obj) });
+        prog.push_insn(block_id, Op::Return { val: Opnd::Insn(getivar_foo_id) });
+
+        let result = sctp(&mut prog);
+        // TODO(max)
+        // assert_eq!(result.type_of(getivar_foo_id), Type::Int);
+        // assert_eq!(result.type_of(getivar_bar_id), Type::Int);
     }
 }
