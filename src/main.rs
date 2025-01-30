@@ -236,9 +236,6 @@ struct Program
 
     blocks: Vec<Block>,
 
-    // Set of blocks that contain a terminator instruction
-    blocks_terminated: HashSet<BlockId>,
-
     insns: Vec<Insn>,
 
     // Main/entry function
@@ -247,7 +244,7 @@ struct Program
 
 impl Default for Program {
     fn default() -> Program {
-        let mut result = Program { classes: vec![], funs: vec![], blocks: vec![], blocks_terminated: HashSet::new(), insns: vec![], main: FunId(0) };
+        let mut result = Program { classes: vec![], funs: vec![], blocks: vec![], insns: vec![], main: FunId(0) };
         let c = result.new_class();
         assert_eq!(c, NIL_CLASS);
         let c = result.new_class();
@@ -326,12 +323,11 @@ impl Program {
     // Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
         // Check that we're not adding insns after a branch in an already terminated block
-        if self.blocks_terminated.contains(&block) {
-            panic!("Cannot push terminator instruction on block that is already terminated");
-        }
-
-        if op.is_terminator() {
-            self.blocks_terminated.insert(block);
+        match self.blocks[block.0].insns.last() {
+            Some(insn_id) => if self.insns[insn_id.0].op.is_terminator() {
+                panic!("Cannot push terminator instruction on block that is already terminated");
+            }
+            _ => {}
         }
 
         let insn = Insn {
