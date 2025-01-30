@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
 use std::cmp::{min, max};
+use bit_set::BitSet;
 
 // TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
 // around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
@@ -160,18 +161,31 @@ enum Type
     Const(Value),
     Int,  // Special case of Object(INT_CLASS)
     Bool,  // Special case of Object(TRUE_CLASS, FALSE_CLASS)
-    Object(BTreeSet<ClassId>),
+    Object(BitSet),
     Any,
 }
 
 impl Type {
     fn object(class_id: ClassId) -> Type {
-        Type::Object(BTreeSet::from([class_id]))
+        let mut result = BitSet::with_capacity(class_id.0);
+        result.insert(class_id.0);
+        Type::Object(result)
+    }
+
+    fn two_objects(l: ClassId, r: ClassId) -> Type {
+        let mut result = BitSet::with_capacity(if l.0 > r.0 { l.0 } else { r.0 });
+        result.insert(l.0);
+        result.insert(r.0);
+        Type::Object(result)
     }
 
     fn objects(class_ids: &Vec<ClassId>) -> Type {
         assert!(!class_ids.is_empty(), "Use Type::Empty instead");
-        Type::Object(BTreeSet::from_iter(class_ids.iter().map(|id| *id)))
+        let mut result = BitSet::with_capacity(class_ids.iter().map(|cid| cid.0).max().unwrap());
+        for class_id in class_ids {
+            result.insert(class_id.0);
+        }
+        Type::Object(result)
     }
 
     #[inline]
@@ -200,14 +214,18 @@ fn union(left: &Type, right: &Type) -> Type {
         (Type::Const(Value::Bool(l)), Type::Const(Value::Bool(r))) => Type::Bool,
         (Type::Const(Value::Bool(_)), Type::Bool) | (Type::Bool, Type::Const(Value::Bool(_))) => Type::Bool,
         (Type::Bool, Type::Bool) => Type::Bool,
-        (Type::Object(l), Type::Object(r)) => Type::Object(l.union(r).map(|item| *item).collect()),
-        (Type::Bool, x) | (x, Type::Bool) => union(&Type::objects(&vec![TRUE_CLASS, FALSE_CLASS]), x),
-        (x, Type::Object(set)) | (Type::Object(set), x) => {
-            let mut result = set.clone();
-            result.insert(x.class_id());
+        (Type::Object(l), Type::Object(r)) => {
+            let mut result = l.clone();
+            result.union_with(r);
             Type::Object(result)
         }
-        (l, r) => Type::Object(BTreeSet::from_iter([l.class_id(), r.class_id()]))
+        (Type::Bool, x) | (x, Type::Bool) => union(&Type::two_objects(TRUE_CLASS, FALSE_CLASS), x),
+        (x, Type::Object(set)) | (Type::Object(set), x) => {
+            let mut result = set.clone();
+            result.insert(x.class_id().0);
+            Type::Object(result)
+        }
+        (l, r) => Type::two_objects(l.class_id(), r.class_id())
     }
 }
 
@@ -717,7 +735,8 @@ fn sctp(prog: &Program) -> AnalysisResult
                     match type_of(self_val) {
                         Type::Object(class_ids) => {
                             let targets = class_ids.iter().filter_map(|class_id| {
-                                match prog.lookup_method(*class_id, method) {
+                                let class_id = ClassId(class_id);
+                                match prog.lookup_method(class_id, method) {
                                     Some(fun_id) => Some((class_id, fun_id)),
                                     _ => None,
                                 }
@@ -759,7 +778,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                             }
                                         }
                                         Op::SelfParam => {
-                                            let arg_type = Type::object(*class_id);
+                                            let arg_type = Type::object(class_id);
                                             let old_type = &types[target_insn.0];
                                             // TODO(max): Make some shortcuts for checking if union(old, new) != old
                                             // For example, something like if new > old, this is an easy yes
@@ -874,23 +893,23 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct BitSet(usize);
+pub struct SmallBitSet(usize);
 
-impl BitSet {
-    fn all_ones() -> BitSet {
-        BitSet(std::usize::MAX)
+impl SmallBitSet {
+    fn all_ones() -> SmallBitSet {
+        SmallBitSet(std::usize::MAX)
     }
 
     fn set(&mut self, idx: usize) {
         self.0 |= 1 << idx;
     }
 
-    fn and(&self, other: BitSet) -> BitSet {
-        BitSet(self.0 & other.0)
+    fn and(&self, other: SmallBitSet) -> SmallBitSet {
+        SmallBitSet(self.0 & other.0)
     }
 }
 
-fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
+fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
     let class = &prog.classes[class.0];
     let ctor = class.ctor.unwrap();
     let mut self_param = None;
@@ -914,16 +933,16 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
     for block in &blocks {
         preds.insert(*block, HashSet::new());
     }
-    let mut block_out: HashMap<BlockId, BitSet> = HashMap::new();
+    let mut block_out: HashMap<BlockId, SmallBitSet> = HashMap::new();
     for block in &blocks {
-        block_out.insert(*block, BitSet(0));
+        block_out.insert(*block, SmallBitSet(0));
     }
     // Do abstract interpretation to flow definite ivar assignment
     loop {
         let mut changed = false;
         for block in &blocks {
-            // Entrypoint does not have any preds so in that special case we give it BitSet(0)
-            let mut state =  preds[&block].iter().map(|block| block_out[block]).reduce(|acc, out| acc.and(out)).unwrap_or(BitSet(0));
+            // Entrypoint does not have any preds so in that special case we give it SmallBitSet(0)
+            let mut state =  preds[&block].iter().map(|block| block_out[block]).reduce(|acc, out| acc.and(out)).unwrap_or(SmallBitSet(0));
             for insn_id in &prog.blocks[block.0].insns {
                 match &prog.insns[insn_id.0].op {
                     Op::IfTrue { then_block, else_block, .. } => {
@@ -935,7 +954,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
                     }
                     Op::SetIvar { name, self_val, val } if *self_val == Opnd::Insn(*self_param) => {
                         let idx = match class.ivars.iter().position(|ivar| *ivar == *name) {
-                            // TODO(max): Check if index is too big to represent in BitSet
+                            // TODO(max): Check if index is too big to represent in SmallBitSet
                             Some(idx) => idx,
                             None => panic!("Unknown ivar {name}"),
                         };
@@ -954,7 +973,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> BitSet {
         }
     }
     // Summarize the definite assignment by and-ing all the Return states together
-    let mut result = BitSet::all_ones();
+    let mut result = SmallBitSet::all_ones();
     for block in &blocks {
         match &prog.insns[prog.blocks[block.0].insns.last().unwrap().0].op {
             Op::Return { .. } => {
@@ -1923,7 +1942,7 @@ mod sctp_tests {
         prog.push_insn(ctor_block_id, Op::SelfParam);
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
-        assert_eq!(result, BitSet(0));
+        assert_eq!(result, SmallBitSet(0));
     }
 
     #[test]
@@ -1936,7 +1955,7 @@ mod sctp_tests {
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
-        assert_eq!(result, BitSet(0b10));
+        assert_eq!(result, SmallBitSet(0b10));
     }
 
     #[test]
@@ -1957,6 +1976,6 @@ mod sctp_tests {
         prog.push_insn(right, Op::Jump { target: join });
         prog.push_insn(join, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
-        assert_eq!(result, BitSet(0b01));
+        assert_eq!(result, SmallBitSet(0b01));
     }
 }

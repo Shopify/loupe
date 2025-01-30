@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.58.0" # Minimally supported rust version
 
 [dependencies]
+bit-set = "0.8"
 
 [profile.dev]
 opt-level = 0
