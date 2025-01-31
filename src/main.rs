@@ -2260,7 +2260,6 @@ mod parser_tests {
     #[test]
     fn test_parse_function_with_params() {
         let mut lexer = Lexer::new("def foo(a, b) end");
-        use Token::*;
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
