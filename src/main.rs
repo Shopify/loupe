@@ -1417,11 +1417,11 @@ fn main()
     println!();
 
     // Check that all global functions (but not methods) are marked executable
-    for fun in &prog.funs {
+    for (fun_id, fun) in prog.funs.iter().enumerate() {
         let entry_id = fun.entry_block;
 
         if !fun.name.starts_with("m") && !result.block_executable[entry_id.0] {
-            panic!("function entry block not marked executable: {:?}", fun);
+            panic!("function {fun_id} entry block not marked executable: {:?}", fun);
         }
     }
 
