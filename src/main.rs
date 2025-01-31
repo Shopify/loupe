@@ -519,7 +519,7 @@ enum Op
     Return { val: Opnd },
 
     // Load self parameter
-    SelfParam,
+    SelfParam { class_id: ClassId },
     // Load a function parameter.
     Param { idx: usize },
 
@@ -731,9 +731,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                         _ => Type::Bool,
                     }
                 }
-                Op::SelfParam => {
-                    flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
-                }
+                Op::SelfParam { class_id } => Type::object(*class_id),
                 Op::Phi { ins } => {
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
@@ -812,7 +810,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                     insn_worklist.push_back(*target_insn);
                                 }
                             }
-                            Op::SelfParam => panic!("no self parameter allowed in static send target"),
+                            Op::SelfParam { .. } => panic!("no self parameter allowed in static send target"),
                             _ => {}
                         }
                     }
@@ -842,9 +840,6 @@ fn sctp(prog: &Program) -> AnalysisResult
                                                 assert!(idx < args.len());
                                                 flows_to[target_insn.0].insert(args[idx]);
                                             }
-                                            Op::SelfParam => {
-                                                flows_to[target_insn.0].insert(*self_val);
-                                            }
                                             _ => {}
                                         }
                                     }
@@ -858,15 +853,6 @@ fn sctp(prog: &Program) -> AnalysisResult
                                         Op::Param { idx, .. } => {
                                             assert!(idx < args.len());
                                             let arg_type = type_of(&args[idx]);
-                                            let old_type = &types[target_insn.0];
-                                            // TODO(max): Make some shortcuts for checking if union(old, new) != old
-                                            // For example, something like if new > old, this is an easy yes
-                                            if union(old_type, &arg_type) != *old_type {
-                                                insn_worklist.push_back(*target_insn);
-                                            }
-                                        }
-                                        Op::SelfParam => {
-                                            let arg_type = Type::object(class_id);
                                             let old_type = &types[target_insn.0];
                                             // TODO(max): Make some shortcuts for checking if union(old, new) != old
                                             // For example, something like if new > old, this is an easy yes
@@ -964,7 +950,7 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
             Op::IfTrue { val, .. } => {
                 mark_use(val);
             }
-            Op::SelfParam => {}
+            Op::SelfParam { .. } => {}
             Op::Param { .. } => {}
             Op::Jump { .. } => {}
             Op::New { .. } => {}
@@ -1009,7 +995,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
     let entry = prog.funs[ctor.0].entry_block;
     for insn_id in &prog.blocks[entry.0].insns {
         match &prog.insns[insn_id.0].op {
-            Op::SelfParam => {
+            Op::SelfParam { .. } => {
                 self_param = Some(insn_id);
                 break;
             }
@@ -1198,7 +1184,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
         // Set up a constructor for this class
         {
-            let self_id = prog.push_insn(ctor_entry, Op::SelfParam);
+            let self_id = prog.push_insn(ctor_entry, Op::SelfParam { class_id });
 
             // Create some ivars for this class
             for j in 0..IVARS_PER_CLASS {
@@ -1226,7 +1212,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
             let ret_val = if rng.rand_bool() {
                 // Choose a random ivar
-                let self_id = prog.push_insn(entry_block, Op::SelfParam);
+                let self_id = prog.push_insn(entry_block, Op::SelfParam { class_id });
                 let ivar_idx = rng.rand_index(IVARS_PER_CLASS);
                 let ivar_name = format!("ivar_{}", ivar_idx);
                 let getivar_id = prog.push_insn(entry_block, Op::GetIvar { name: ivar_name, self_val: Opnd::Insn(self_id) });
@@ -1406,10 +1392,6 @@ fn main()
         }
     }
     println!("max_num_classes: {}, for insn {:?}", int_str_grouped(max_num_classes), prog.insns[max_insn_idx]);
-    println!("insn's function is called by:");
-    for caller in result.called_by[max_insn_idx].iter() {
-        println!("* {:?} in function {:?}", prog.insns[caller.0], prog.fun_containing(*caller));
-    }
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
@@ -2296,7 +2278,7 @@ mod sctp_tests {
     fn test_analyze_ctor_empty() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
-        prog.push_insn(ctor_block_id, Op::SelfParam);
+        prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
         assert_eq!(result, SmallBitSet(0));
@@ -2308,7 +2290,7 @@ mod sctp_tests {
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
         prog.push_ivar(class, "bar".into());
         prog.push_ivar(class, "foo".into());
-        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
@@ -2321,7 +2303,7 @@ mod sctp_tests {
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
         prog.push_ivar(class, "foo".into());
         prog.push_ivar(class, "bar".into());
-        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
         let left = prog.new_block(ctor_fun_id);
         let right = prog.new_block(ctor_fun_id);
         prog.push_insn(ctor_block_id, Op::IfTrue { val: Opnd::Const(Value::Int(3)), then_block: left, else_block: right });
@@ -2342,7 +2324,7 @@ mod sctp_tests {
         let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
         prog.push_ivar(class, "foo".into());
         prog.push_ivar(class, "bar".into());
-        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam);
+        let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "foo".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Int(4)) });
         prog.push_insn(ctor_block_id, Op::SetIvar { name: "bar".into(), self_val: Opnd::Insn(self_id), val: Opnd::Const(Value::Bool(true)) });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
