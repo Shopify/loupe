@@ -1170,24 +1170,28 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     let mut classes = Vec::new();
     for _ in 0..num_classes {
         let (class_id, (ctor_id, ctor_entry)) = prog.new_class_with_ctor();
-        let self_id = prog.push_insn(ctor_entry, Op::SelfParam);
         classes.push(class_id);
 
-        // Create some ivars for this class
-        for j in 0..IVARS_PER_CLASS {
-            let ivar_name = format!("ivar_{}", j);
-            prog.push_ivar(class_id, ivar_name.clone());
+        // Set up a constructor for this class
+        {
+            let self_id = prog.push_insn(ctor_entry, Op::SelfParam);
 
-            // With some probability, initialize the ivar to a random integer
-            // Some ivsrs are left uninitialized
-            if rng.pct_prob(80) {
-                let val = Opnd::Const(Value::Int(rng.rand_usize(1, 7) as i64));
-                prog.push_insn(ctor_entry, Op::SetIvar { name: ivar_name, self_val: Opnd::Insn(self_id), val });
+            // Create some ivars for this class
+            for j in 0..IVARS_PER_CLASS {
+                let ivar_name = format!("ivar_{}", j);
+                prog.push_ivar(class_id, ivar_name.clone());
+
+                // With some probability, initialize the ivar to a random integer
+                // Some ivsrs are left uninitialized
+                if rng.pct_prob(80) {
+                    let val = Opnd::Const(Value::Int(rng.rand_usize(1, 7) as i64));
+                    prog.push_insn(ctor_entry, Op::SetIvar { name: ivar_name, self_val: Opnd::Insn(self_id), val });
+                }
             }
-        }
 
-        // Constructor returns nil
-        prog.push_insn(ctor_entry, Op::Return { val: NIL });
+            // Constructor returns nil
+            prog.push_insn(ctor_entry, Op::Return { val: NIL });
+        }
 
         // Create methods for this class
         for j in 0..METHODS_PER_CLASS {
@@ -1245,7 +1249,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
             let m_name = format!("m{}", m_no);
             let call_insn = prog.push_insn(
                 entry_block,
-                Op::SendDynamic { method: m_name, self_val: Opnd::Insn(param_id) , args: vec![] }
+                Op::SendDynamic { method: m_name, self_val: Opnd::Insn(param_id), args: vec![] }
             );
 
             let nil_block = prog.new_block(fun_id);
