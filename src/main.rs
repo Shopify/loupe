@@ -1532,6 +1532,8 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Comma)
         } else if c == '+' {
             Some(Token::Plus)
+        } else if c == '*' {
+            Some(Token::Mul)
         } else {
             panic!("unhandled char {c}");
         }
@@ -2362,6 +2364,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_mul() {
+        let mut lexer = Lexer::new("   *");
+        assert_eq!(lexer.next(), Some(Token::Mul));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_digit() {
         let mut lexer = Lexer::new("   1");
         assert_eq!(lexer.next(), Some(Token::Int(1)));
@@ -2442,5 +2451,37 @@ mod parser_tests {
         assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
         assert_eq!(prog.insns[2].op, Op::Add { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
         assert_eq!(prog.insns[3].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_add_mul() {
+        let mut lexer = Lexer::new("def add(a, b, c) a+b*c end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "add");
+        assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[2].op, Op::Param { idx: 2 });
+        assert_eq!(prog.insns[3].op, Op::Mul { v0: Opnd::Insn(InsnId(1)), v1: Opnd::Insn(InsnId(2)) });
+        assert_eq!(prog.insns[4].op, Op::Add { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(3)) });
+        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_mul_add() {
+        let mut lexer = Lexer::new("def add(a, b, c) a*b+c end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "add");
+        assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[2].op, Op::Param { idx: 2 });
+        assert_eq!(prog.insns[3].op, Op::Mul { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
+        assert_eq!(prog.insns[4].op, Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(2)) });
+        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
     }
 }
