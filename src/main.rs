@@ -1479,7 +1479,8 @@ enum Token {
     Plus,
     Minus,
     Mul,
-    Div
+    Div,
+    Equal,
 }
 
 #[derive(PartialEq)]
@@ -1557,6 +1558,8 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Plus)
         } else if c == '*' {
             Some(Token::Mul)
+        } else if c == '=' {
+            Some(Token::Equal)
         } else {
             panic!("unhandled char {c}");
         }
@@ -1677,16 +1680,6 @@ impl<'a> Parser<'a> {
                 self.input.next();
                 Opnd::Const(Value::Int(lit))
             }
-            Some(Token::Ident(name)) => {
-                match env.get(name) {
-                    Some(opnd) => {
-                        let opnd = *opnd;
-                        self.input.next();
-                        opnd
-                    }
-                    _ => panic!("Unbound name {name}"),
-                }
-            }
             Some(Token::LParen) => {
                 self.input.next();
                 let result = self.parse_(&mut env, 0);
@@ -1698,7 +1691,28 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
-        let mut lhs = self.paren(&mut env);
+        let mut lhs = match self.input.peek() {
+            Some(Token::Ident(name)) => {
+                let name = name.clone();
+                self.input.next();
+                match self.input.peek() {
+                    // TODO(max): Something about precedence. Don't allow if > 0?
+                    Some(Token::Equal) => {
+                        // It's an assignment. The name isn't in the environment yet. Parse right
+                        // to get the value so we can insert it.
+                        self.input.next();
+                        let rhs = self.parse_expression(&mut env);
+                        env.insert(name, rhs);
+                        rhs
+                    }
+                    _ => {
+                        // It's being used for its value.
+                        env[&name]
+                    }
+                }
+            }
+            _ => self.paren(&mut env),
+        };
         loop {
             match self.input.peek() {
                 Some(op @ (Token::Plus | Token::Minus | Token::Mul | Token::Div)) => {
@@ -2409,6 +2423,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_equal() {
+        let mut lexer = Lexer::new("   =");
+        assert_eq!(lexer.next(), Some(Token::Equal));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_digit() {
         let mut lexer = Lexer::new("   1");
         assert_eq!(lexer.next(), Some(Token::Int(1)));
@@ -2544,5 +2565,21 @@ mod parser_tests {
         assert_eq!(prog.funs.len(), 1);
         assert_eq!(prog.funs[0].name, "foo");
         assert_eq!(prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_assign() {
+        let mut lexer = Lexer::new("
+def foo()
+  a = 123
+  return a+1
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Add { v0: Opnd::Const(Value::Int(123)), v1: Opnd::Const(Value::Int(1)) });
+        assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Insn(InsnId(0)) });
     }
 }
