@@ -611,6 +611,7 @@ fn sctp(prog: &Program) -> AnalysisResult
     let ivar_initialized: Vec<SmallBitSet> = (0..prog.classes.len()).map(|class_id|
         analyze_ctor(prog, ClassId(class_id))
     ).collect();
+    // TODO(max): Set all uninitialized ivars to nil in ivar_types
 
     // Map of ClassId->ivar types. Used jointly with ivar initialization bitsets.
     let num_classes = prog.classes.len();
