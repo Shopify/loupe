@@ -1322,7 +1322,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     prog
 }
 
-fn print_prog(prog: &Program, result: Option<AnalysisResult>) {
+fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
     println!("Entry: {}", prog.main);
     for (fun_id, fun) in prog.funs.iter().enumerate() {
         let fun_id = FunId(fun_id);
