@@ -339,14 +339,18 @@ impl Program {
         id
     }
 
+    fn block_is_terminated(&self, block: BlockId) -> bool {
+        match self.blocks[block.0].insns.last() {
+            Some(insn_id) if self.insns[insn_id.0].op.is_terminator() => true,
+            _ => false,
+        }
+    }
+
     // Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
         // Check that we're not adding insns after a branch in an already terminated block
-        match self.blocks[block.0].insns.last() {
-            Some(insn_id) => if self.insns[insn_id.0].op.is_terminator() {
-                panic!("Cannot push terminator instruction on block that is already terminated");
-            }
-            _ => {}
+        if self.block_is_terminated(block) {
+            panic!("Cannot push terminator instruction on block that is already terminated");
         }
 
         let insn = Insn {
@@ -1450,6 +1454,7 @@ enum Token {
     Def,
     Class,
     End,
+    Return,
     Int(i64),
     Ident(String),
     LParen,
@@ -1491,6 +1496,8 @@ impl<'a> Lexer<'a> {
             Token::Def
         } else if result == "end" {
             Token::End
+        } else if result == "return" {
+            Token::Return
         } else {
             Token::Ident(result)
         }
@@ -1603,16 +1610,25 @@ impl<'a> Parser<'a> {
                 None => panic!("Unexpected EOF while parsing function"),
             }
         }
-        self.prog.push_insn(block_id, Op::Return { val: Opnd::Const(Value::Nil) });
+        if !self.prog.block_is_terminated(block_id) {
+            self.prog.push_insn(block_id, Op::Return { val: Opnd::Const(Value::Nil) });
+        }
         self.expect(Token::End);
     }
 
     fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) {
-        self.parse_expression(&mut env)
+        match self.input.peek() {
+            Some(Token::Return) => {
+                self.input.next();
+                let val = self.parse_expression(&mut env);
+                self.prog.push_insn(self.block, Op::Return { val });
+            }
+            _ => { self.parse_expression(&mut env); }
+        }
     }
 
-    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) {
-        self.parse_(&mut env, 0);
+    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd{
+        self.parse_(&mut env, 0)
     }
 
     fn prec(token: &Token) -> i8 {
@@ -2335,6 +2351,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_return() {
+        let mut lexer = Lexer::new("   return");
+        assert_eq!(lexer.next(), Some(Token::Return));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_ident() {
         let mut lexer = Lexer::new("   abc");
         assert_eq!(lexer.next(), Some(Token::Ident("abc".into())));
@@ -2483,5 +2506,28 @@ mod parser_tests {
         assert_eq!(prog.insns[3].op, Op::Mul { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
         assert_eq!(prog.insns[4].op, Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(2)) });
         assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_explicit_return() {
+        let mut lexer = Lexer::new("def foo() return 1 end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Int(1)) });
+    }
+
+    #[test]
+    fn test_parse_function_implicit_return_nil() {
+        // TODO(max): Maybe consider making blocks return value of last expression
+        let mut lexer = Lexer::new("def foo() 1 end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Nil) });
     }
 }
