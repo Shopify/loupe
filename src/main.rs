@@ -389,6 +389,10 @@ impl Program {
         self.funs[fun_id.0].entry_block
     }
 
+    fn fun_containing(&self, insn_id: InsnId) -> FunId {
+        self.blocks[self.insns[insn_id.0].block_id.0].fun_id
+    }
+
     fn lookup_method(&self, class_id: ClassId, method_name: &String) -> Option<FunId> {
         self.classes[class_id.0].methods.get(method_name).copied()
     }
@@ -554,6 +558,9 @@ struct AnalysisResult {
     // Number of iterations needed by the type analysis to
     // compute its result
     itr_count: usize,
+
+    // Map of insn -> set of instructions that call the function containing insns
+    called_by: Vec<HashSet<InsnId>>,
 }
 
 impl AnalysisResult {
@@ -904,7 +911,8 @@ fn sctp(prog: &Program) -> AnalysisResult
         block_executable: executable,
         insn_type: types,
         insn_uses,
-        itr_count
+        itr_count,
+        called_by
     }
 }
 
@@ -1398,6 +1406,10 @@ fn main()
         }
     }
     println!("max_num_classes: {}, for insn {:?}", int_str_grouped(max_num_classes), prog.insns[max_insn_idx]);
+    println!("insn's function is called by:");
+    for caller in result.called_by[max_insn_idx].iter() {
+        println!("* {:?} in function {:?}", prog.insns[caller.0], prog.fun_containing(*caller));
+    }
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
