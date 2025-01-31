@@ -1450,11 +1450,15 @@ enum Token {
     Def,
     Class,
     End,
+    Int(i64),
     Ident(String),
     LParen,
     RParen,
     Comma,
     Plus,
+    Minus,
+    Mul,
+    Div
 }
 
 struct Lexer<'a> {
@@ -1484,7 +1488,24 @@ impl<'a> Lexer<'a> {
             Token::Ident(result)
         }
     }
+
+    fn read_int(&mut self, start: char) -> Token {
+        let mut result: i64 = start.to_digit(RADIX).unwrap().into();
+        loop {
+            match self.input.peek() {
+                Some(c) if c.is_digit(RADIX) => {
+                    let digit: i64 = c.to_digit(RADIX).unwrap().into();
+                    self.input.next();
+                    result = result * (RADIX as i64) + digit;
+                }
+                _ => { break; }
+            }
+        }
+        Token::Int(result)
+    }
 }
+
+const RADIX: u32 = 10;
 
 impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
@@ -1494,6 +1515,8 @@ impl<'a> Iterator for Lexer<'a> {
         let c = c.unwrap();
         if c.is_alphabetic() {
             Some(self.read_word(c))
+        } else if c.is_digit(RADIX) {
+            Some(self.read_int(c))
         } else if c == '(' {
             Some(Token::LParen)
         } else if c == ')' {
@@ -2233,6 +2256,29 @@ mod parser_tests {
     fn test_lex_plus() {
         let mut lexer = Lexer::new("   +");
         assert_eq!(lexer.next(), Some(Token::Plus));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_digit() {
+        let mut lexer = Lexer::new("   1");
+        assert_eq!(lexer.next(), Some(Token::Int(1)));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_int() {
+        let mut lexer = Lexer::new("   123");
+        assert_eq!(lexer.next(), Some(Token::Int(123)));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_int_add() {
+        let mut lexer = Lexer::new("   123+456");
+        assert_eq!(lexer.next(), Some(Token::Int(123)));
+        assert_eq!(lexer.next(), Some(Token::Plus));
+        assert_eq!(lexer.next(), Some(Token::Int(456)));
         assert_eq!(lexer.next(), None);
     }
 
