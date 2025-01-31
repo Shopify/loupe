@@ -819,7 +819,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                 let class_id = ClassId(class_id);
                                 match prog.lookup_method(class_id, method) {
                                     Some(fun_id) => Some((class_id, fun_id)),
-                                    _ => None,
+                                    _ => panic!("Invalid send of {method} to {class_id:?}"),
                                 }
                             });
                             for (class_id, target) in targets {
