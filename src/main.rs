@@ -1323,6 +1323,17 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 }
 
 fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
+    for (class_id, class) in prog.classes.iter().enumerate() {
+        let class_id = ClassId(class_id);
+        println!("class {class_id}");
+        for (ivar_idx, ivar_name) in class.ivars.iter().enumerate() {
+            println!("  ivar {ivar_idx}: {ivar_name}");
+        }
+        for (method_name, fun_id) in class.methods.iter() {
+            println!("  method {method_name}: {fun_id}");
+        }
+        println!("end");
+    }
     println!("Entry: {}", prog.main);
     for (fun_id, fun) in prog.funs.iter().enumerate() {
         let fun_id = FunId(fun_id);
