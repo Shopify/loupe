@@ -1445,7 +1445,7 @@ fn main()
     println!("analysis time: {:.1} ms", time_ms);
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Token {
     Def,
     Class,
@@ -1459,6 +1459,13 @@ enum Token {
     Minus,
     Mul,
     Div
+}
+
+#[derive(PartialEq)]
+enum Assoc {
+    Any,
+    Left,
+    Right,
 }
 
 struct Lexer<'a> {
@@ -1534,11 +1541,14 @@ impl<'a> Iterator for Lexer<'a> {
 struct Parser<'a> {
     input: std::iter::Peekable<Lexer<'a>>,
     prog: Program,
+    block: BlockId,
 }
 
 impl<'a> Parser<'a> {
     fn from_lexer(lexer: Lexer) -> Parser {
-        Parser { input: lexer.peekable(), prog: Program::default() }
+        let mut prog = Program::default();
+        let (_, main_entry) = prog.new_fun();
+        Parser { input: lexer.peekable(), prog: Program::default(), block: main_entry }
     }
 
     fn parse_program(&mut self) {
@@ -1579,11 +1589,103 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(Token::RParen);
+        let mut env: HashMap<String, Opnd> = HashMap::new();
         for (idx, param) in params.iter().enumerate() {
-            self.prog.push_insn(block_id, Op::Param { idx });
+            let insn_id = self.prog.push_insn(block_id, Op::Param { idx });
+            env.insert(param.clone(), Opnd::Insn(insn_id));
+        }
+        loop {
+            match self.input.peek() {
+                Some(Token::End) => { break; }
+                Some(_) => { self.parse_statement(&mut env); }
+                None => panic!("Unexpected EOF while parsing function"),
+            }
         }
         self.prog.push_insn(block_id, Op::Return { val: Opnd::Const(Value::Nil) });
         self.expect(Token::End);
+    }
+
+    fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) {
+        self.parse_expression(&mut env)
+    }
+
+    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) {
+        self.parse_(&mut env, 0);
+    }
+
+    fn prec(token: &Token) -> i8 {
+        match token {
+            Token::Plus => 1,
+            Token::Minus => 1,
+            // TODO(max): Unary negate?
+            Token::Mul => 3,
+            Token::Div => 3,
+            _ => panic!("Don't know precedence of {token:?}"),
+        }
+    }
+
+    fn assoc(token: &Token) -> Assoc {
+        match token {
+            Token::Plus => Assoc::Any,
+            Token::Minus => Assoc::Left,
+            // TODO(max): Unary negate?
+            Token::Mul => Assoc::Any,
+            Token::Div => Assoc::Left,
+            _ => panic!("Don't know associativity of {token:?}"),
+        }
+    }
+
+    fn paren(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
+        match self.input.peek() {
+            None => panic!("Unexpected EOF"),
+            Some(Token::Int(lit)) => {
+                let lit = *lit;
+                self.input.next();
+                Opnd::Const(Value::Int(lit))
+            }
+            Some(Token::Ident(name)) => {
+                match env.get(name) {
+                    Some(opnd) => {
+                        let opnd = *opnd;
+                        self.input.next();
+                        opnd
+                    }
+                    _ => panic!("Unbound name {name}"),
+                }
+            }
+            Some(Token::LParen) => {
+                self.input.next();
+                let result = self.parse_(&mut env, 0);
+                self.expect(Token::RParen);
+                result
+            }
+            token => panic!("Unexpected token {token:?}"),
+        }
+    }
+
+    fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
+        let mut lhs = self.paren(&mut env);
+        loop {
+            match self.input.peek() {
+                Some(op @ (Token::Plus | Token::Minus | Token::Mul | Token::Div)) => {
+                    let op = op.clone();
+                    let op_prec = Self::prec(&op);
+                    if op_prec < prec {
+                        break;
+                    }
+                    self.input.next();
+                    let next_prec = if Self::assoc(&op) == Assoc::Left { op_prec + 1 } else { op_prec };
+                    let rhs = self.parse_(&mut env, next_prec);
+                    lhs = Opnd::Insn(self.prog.push_insn(self.block, match op {
+                        Token::Plus => Op::Add { v0: lhs, v1: rhs },
+                        Token::Mul => Op::Mul { v0: lhs, v1: rhs },
+                        _ => todo!(),
+                    }));
+                }
+                Some(_) | None => { break; }
+            }
+        }
+        lhs
     }
 }
 
@@ -2314,5 +2416,31 @@ mod parser_tests {
         assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
         assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
         assert_eq!(prog.insns[2].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_const_add() {
+        let mut lexer = Lexer::new("def add() 1+2 end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "add");
+        assert_eq!(prog.insns[0].op, Op::Add { v0: Opnd::Const(Value::Int(1)), v1: Opnd::Const(Value::Int(2)) });
+        assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_function_add() {
+        let mut lexer = Lexer::new("def add(a, b) a+b end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "add");
+        assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[2].op, Op::Add { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
+        assert_eq!(prog.insns[3].op, Op::Return { val: Opnd::Const(Value::Nil) });
     }
 }
