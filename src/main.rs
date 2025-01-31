@@ -11,6 +11,25 @@ use bit_set::BitSet;
 // around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
 // protection.
 
+/// Produce an string representation of an integer with comma separator for thousands
+pub fn int_str_grouped<Int: ToString>(n: Int) -> String
+{
+    let num_chars: Vec<char> = n.to_string().chars().rev().collect();
+
+    let mut chars_sep = Vec::new();
+
+    for idx in 0..num_chars.len() {
+        chars_sep.push(num_chars[idx]);
+        if (idx % 3) == 2 && idx < num_chars.len() - 1 {
+            chars_sep.push(',');
+        }
+    }
+
+    let num_str: String = chars_sep.into_iter().rev().collect();
+
+    num_str
+}
+
 pub struct LCG {
     state: u64,
     // Parameters from "Numerical Recipes"
@@ -1340,7 +1359,7 @@ fn main()
             exec_fn_count += 1;
         }
     }
-    println!("exec_fn_count: {}", exec_fn_count);
+    println!("exec_fn_count: {}", int_str_grouped(exec_fn_count));
     let mut max_num_classes = 0;
     for ty in result.insn_type.iter() {
         match ty {
@@ -1352,7 +1371,7 @@ fn main()
             _ => {}
         }
     }
-    println!("max_num_classes: {max_num_classes}");
+    println!("max_num_classes: {}", int_str_grouped(max_num_classes));
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
@@ -1371,10 +1390,10 @@ fn main()
         }
     }
 
-    println!("Total function count: {}", prog.funs.len());
-    println!("Total instruction count: {}", prog.insns.len());
+    println!("Total function count: {}", int_str_grouped(prog.funs.len()));
+    println!("Total instruction count: {}", int_str_grouped(prog.insns.len()));
+    println!("itr count: {}", int_str_grouped(result.itr_count));
     println!("analysis time: {:.1} ms", time_ms);
-    println!("itr count: {}", result.itr_count);
     println!();
 
     // Check that all global functions (but not methods) are marked executable
@@ -1422,8 +1441,8 @@ fn main()
         }
     }
 
+    println!("itr count: {}", int_str_grouped(result.itr_count));
     println!("analysis time: {:.1} ms", time_ms);
-    println!("itr count: {}", result.itr_count);
 }
 
 #[derive(Debug, PartialEq)]
