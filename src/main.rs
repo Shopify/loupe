@@ -1365,17 +1365,19 @@ fn main()
     }
     println!("exec_fn_count: {}", int_str_grouped(exec_fn_count));
     let mut max_num_classes = 0;
-    for ty in result.insn_type.iter() {
+    let mut max_insn_idx = 0;
+    for (insn_idx, ty) in result.insn_type.iter().enumerate() {
         match ty {
             Type::Object(classes) => {
                 if classes.len() > max_num_classes {
                     max_num_classes = classes.len();
+                    max_insn_idx = insn_idx;
                 }
             }
             _ => {}
         }
     }
-    println!("max_num_classes: {}", int_str_grouped(max_num_classes));
+    println!("max_num_classes: {}, for insn {:?}", int_str_grouped(max_num_classes), prog.insns[max_insn_idx]);
 
     // Check that the main return type is integer
     for (insn_id, insn) in prog.insns.iter().enumerate() {
