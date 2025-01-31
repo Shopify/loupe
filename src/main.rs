@@ -1401,7 +1401,7 @@ fn main()
         let entry_id = fun.entry_block;
 
         if !fun.name.starts_with("m") && !result.block_executable[entry_id.0] {
-            panic!("all function entry blocks should be executable");
+            panic!("function entry block not marked executable: {:?}", fun);
         }
     }
 
