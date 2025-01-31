@@ -615,6 +615,8 @@ fn sctp(prog: &Program) -> AnalysisResult
         }
     }
 
+    let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = HashMap::new();
+
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         match insn {
             Insn { block_id, op: Op::Return { val } } => {
@@ -735,6 +737,9 @@ fn sctp(prog: &Program) -> AnalysisResult
                 Op::GetIvar { self_val, name } => {
                     let result = match type_of(self_val) {
                         Type::Object(classes) => {
+                            for class_id in classes.iter() {
+                                getivars.entry((ClassId(class_id), name)).or_insert(HashSet::new()).insert(insn_id);
+                            }
                             classes.iter().fold(Type::Empty, |acc, class_id| union(&acc, &ivar_types[class_id][name]))
                         }
                         ty => panic!("getivar on non-Object type {ty:?}"),
@@ -748,7 +753,18 @@ fn sctp(prog: &Program) -> AnalysisResult
                             let val_ty = type_of(val);
                             for class_id in classes.iter() {
                                 let mut old_type = ivar_types[class_id].get_mut(name).unwrap();
-                                *old_type = union(old_type, &val_ty);
+                                let union_type = union(old_type, &val_ty);
+                                if union_type != *old_type {
+                                    *old_type = union_type;
+                                    match getivars.get(&(ClassId(class_id), name)) {
+                                        Some(insns) => {
+                                            for getivar in insns.iter() {
+                                                insn_worklist.push_back(*getivar);
+                                            }
+                                        }
+                                        None => {}
+                                    }
+                                }
                             }
                         }
                         ty => panic!("setivar on non-Object type {ty:?}"),
@@ -2325,9 +2341,8 @@ mod sctp_tests {
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(getivar_foo_id) });
 
         let result = sctp(&mut prog);
-        // TODO(max)
-        // assert_eq!(result.type_of(getivar_foo_id), Type::Int);
-        // assert_eq!(result.type_of(getivar_bar_id), Type::Int);
+        assert_eq!(result.type_of(getivar_foo_id), Type::Const(Value::Int(4)));
+        assert_eq!(result.type_of(getivar_bar_id), Type::Const(Value::Bool(true)));
     }
 }
 
