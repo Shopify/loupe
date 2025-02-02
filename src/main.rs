@@ -1500,6 +1500,7 @@ enum Token {
     Return,
     If,
     Else,
+    AttrAccessor,
     Int(i64),
     Ident(String),
     LParen,
@@ -1511,6 +1512,7 @@ enum Token {
     Div,
     Equal,
     Dot,
+    Colon,
 }
 
 #[derive(PartialEq)]
@@ -1532,7 +1534,7 @@ impl<'a> Lexer<'a> {
     fn read_word(&mut self, start: char) -> Token {
         let mut result: String = start.into();
         while let Some(c) = self.input.peek() {
-            if c.is_alphabetic() {
+            if c.is_alphabetic() || *c == '_' {
                 result.push(*c);
                 self.input.next();
             } else {
@@ -1549,6 +1551,10 @@ impl<'a> Lexer<'a> {
             Token::If
         } else if result == "else" {
             Token::Else
+        } else if result == "class" {
+            Token::Class
+        } else if result == "attr_accessor" {
+            Token::AttrAccessor
         } else {
             Token::Ident(result)
         }
@@ -1596,6 +1602,8 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Equal)
         } else if c == '.' {
             Some(Token::Dot)
+        } else if c == ':' {
+            Some(Token::Colon)
         } else {
             panic!("unhandled char {c}");
         }
@@ -1619,10 +1627,11 @@ impl<'a> Parser<'a> {
 
     fn parse_program(&mut self) {
         while let Some(token) = self.input.next() {
-            if token != Token::Def {
-                panic!("Unexpected token {token:?}");
+            match token {
+                Token::Def => self.parse_fun(),
+                Token::Class => self.parse_class(),
+                _ => panic!("Unexpected token {token:?}"),
             }
-            self.parse_fun();
         }
     }
 
@@ -1674,6 +1683,22 @@ impl<'a> Parser<'a> {
         }
         self.expect(Token::End);
         self.funs.insert(name, fun_id);
+    }
+
+    fn parse_class(&mut self) {
+        let name = match self.input.next() {
+            Some(Token::Ident(name)) => name.clone(),
+            token => panic!("Unexpected token {token:?}"),
+        };
+        let class_id = self.prog.new_class_with_name(name);
+        while let Some(token) = self.input.next() {
+            match token {
+                Token::AttrAccessor => todo!(),
+                Token::Def => todo!(),
+                Token::End => { break; }
+                _ => panic!("Unexpected token {token:?}"),
+            }
+        }
     }
 
     fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
@@ -2586,6 +2611,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_attr_accessor() {
+        let mut lexer = Lexer::new("   attr_accessor");
+        assert_eq!(lexer.next(), Some(Token::AttrAccessor));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_ident() {
         let mut lexer = Lexer::new("   abc");
         assert_eq!(lexer.next(), Some(Token::Ident("abc".into())));
@@ -2632,6 +2664,13 @@ mod parser_tests {
     fn test_lex_dot() {
         let mut lexer = Lexer::new("   .");
         assert_eq!(lexer.next(), Some(Token::Dot));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_colon() {
+        let mut lexer = Lexer::new("   :");
+        assert_eq!(lexer.next(), Some(Token::Colon));
         assert_eq!(lexer.next(), None);
     }
 
@@ -3079,5 +3118,16 @@ end");
             ] },
             Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
+    }
+
+    #[test]
+    fn test_parse_empty_class() {
+        let mut lexer = Lexer::new("
+class C
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 5);
+        assert_eq!(parser.prog.classes[4].name, "C");
     }
 }
