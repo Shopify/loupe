@@ -1922,12 +1922,16 @@ impl<'a> Parser<'a> {
                     };
                 }
                 Some(Token::Dot) => {
-                    // Method call
+                    // Method call or ivar read
                     self.input.next();
                     let method = match self.input.next() {
                         Some(Token::Ident(method)) => method.clone(),
                         token => panic!("Unexpected token {token:?}"),
                     };
+                    if self.input.peek() != Some(&Token::LParen) {
+                        lhs = Opnd::Insn(self.prog.push_insn(self.block, Op::GetIvar { name: method, self_val: lhs }));
+                        continue;
+                    }
                     self.expect(Token::LParen);
                     let mut args = vec![];
                     loop {
@@ -3123,6 +3127,24 @@ end");
                 Opnd::Const(Value::Int(2)),
                 Opnd::Const(Value::Int(3))
             ] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_read_ivar() {
+        let mut lexer = Lexer::new("
+def foo(o)
+  o.bar
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Param { idx: 0 },
+            Op::GetIvar { name: "bar".into(), self_val: Opnd::Insn(InsnId(0)) },
             Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
     }
