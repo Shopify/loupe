@@ -1806,12 +1806,17 @@ impl<'a> Parser<'a> {
                         // to get the value so we can insert it.
                         self.input.next();
                         let rhs = self.parse_expression(&mut env);
+                        if name == "true" || name == "false" {
+                            panic!("Can't assign to true/false");
+                        }
                         env.insert(name, rhs);
                         rhs
                     }
                     _ => {
                         // It's being used for its value.
-                        env[&name]
+                        if name == "true" { Opnd::Const(Value::Bool(true)) }
+                        else if name == "false" { Opnd::Const(Value::Bool(false)) }
+                        else { *env.get(&name).unwrap_or_else(|| panic!("Unbound name {name}")) }
                     }
                 }
             }
@@ -2575,6 +2580,28 @@ mod parser_tests {
         parser.parse_program();
         assert_eq!(parser.prog.funs.len(), 1);
         assert_eq!(parser.prog.funs[0].name, "foo");
+    }
+
+    #[test]
+    fn test_parse_true() {
+        let mut lexer = Lexer::new("def foo() return true end");
+        use Token::*;
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.funs.len(), 1);
+        assert_eq!(parser.prog.funs[0].name, "foo");
+        assert_eq!(parser.prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Bool(true)) });
+    }
+
+    #[test]
+    fn test_parse_false() {
+        let mut lexer = Lexer::new("def foo() return false end");
+        use Token::*;
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.funs.len(), 1);
+        assert_eq!(parser.prog.funs[0].name, "foo");
+        assert_eq!(parser.prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Bool(false)) });
     }
 
     #[test]
