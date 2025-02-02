@@ -1483,6 +1483,8 @@ enum Token {
     Class,
     End,
     Return,
+    If,
+    Else,
     Int(i64),
     Ident(String),
     LParen,
@@ -1527,6 +1529,10 @@ impl<'a> Lexer<'a> {
             Token::End
         } else if result == "return" {
             Token::Return
+        } else if result == "if" {
+            Token::If
+        } else if result == "else" {
+            Token::Else
         } else {
             Token::Ident(result)
         }
@@ -1581,14 +1587,15 @@ impl<'a> Iterator for Lexer<'a> {
 struct Parser<'a> {
     input: std::iter::Peekable<Lexer<'a>>,
     prog: Program,
+    fun: FunId,
     block: BlockId,
 }
 
 impl<'a> Parser<'a> {
     fn from_lexer(lexer: Lexer) -> Parser {
         let mut prog = Program::default();
-        let (_, main_entry) = prog.new_fun();
-        Parser { input: lexer.peekable(), prog: Program::default(), block: main_entry }
+        let (main_id, main_entry) = prog.new_fun();
+        Parser { input: lexer.peekable(), prog: Program::default(), fun: main_id, block: main_entry }
     }
 
     fn parse_program(&mut self) {
@@ -1612,6 +1619,7 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => self.prog.new_fun_with_name(name),
             token => panic!("Unexpected token {token:?}"),
         };
+        self.fun = fun_id;
         self.expect(Token::LParen);
         let mut params: Vec<String> = vec![];
         loop {
@@ -1641,8 +1649,8 @@ impl<'a> Parser<'a> {
                 None => panic!("Unexpected EOF while parsing function"),
             }
         }
-        if !self.prog.block_is_terminated(block_id) {
-            self.prog.push_insn(block_id, Op::Return { val: Opnd::Const(Value::Nil) });
+        if !self.prog.block_is_terminated(self.block) {
+            self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
         }
         self.expect(Token::End);
     }
@@ -1653,6 +1661,49 @@ impl<'a> Parser<'a> {
                 self.input.next();
                 let val = self.parse_expression(&mut env);
                 self.prog.push_insn(self.block, Op::Return { val });
+            }
+            Some(Token::If) => {
+                self.input.next();
+                let val = self.parse_expression(&mut env);
+                let if_block = self.block;
+                let then_block = self.prog.new_block(self.fun);
+                let join_block = self.prog.new_block(self.fun);
+                self.block = then_block;
+                loop {
+                    match self.input.peek() {
+                        Some(Token::End) => {
+                            self.input.next();
+                            self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block: join_block });
+                            self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            self.block = join_block;
+                            return;
+                        }
+                        Some(Token::Else) => {
+                            self.input.next();
+                            break;
+                        }
+                        _ => {
+                            self.parse_statement(&mut env);
+                        }
+                    }
+                }
+                let else_block = self.prog.new_block(self.fun);
+                self.prog.push_insn(self.block, Op::Jump { target: else_block });
+                self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block });
+                self.block = else_block;
+                loop {
+                    match self.input.peek() {
+                        Some(Token::End) => {
+                            self.input.next();
+                            self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            self.block = join_block;
+                            return;
+                        }
+                        _ => {
+                            self.parse_statement(&mut env);
+                        }
+                    }
+                }
             }
             _ => { self.parse_expression(&mut env); }
         }
@@ -2593,5 +2644,62 @@ end");
         assert_eq!(prog.funs[0].name, "foo");
         assert_eq!(prog.insns[0].op, Op::Add { v0: Opnd::Const(Value::Int(123)), v1: Opnd::Const(Value::Int(1)) });
         assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Insn(InsnId(0)) });
+    }
+
+    fn assert_block_equals(prog: &Program, block: BlockId, ops: Vec<Op>) {
+        assert_eq!(prog.blocks[block.0].insns.len(), ops.len());
+        for (idx, insn_id) in prog.blocks[block.0].insns.iter().enumerate() {
+            assert_eq!(prog.insns[insn_id.0].op, ops[idx]);
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_if() {
+        let mut lexer = Lexer::new("
+def foo()
+  if 1
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::IfTrue { val: Opnd::Const(Value::Int(1)), then_block: BlockId(1), else_block: BlockId(2) },
+        ]);
+        assert_block_equals(&prog, BlockId(1), vec![
+            Op::Jump { target: BlockId(2) },
+        ]);
+        assert_block_equals(&prog, BlockId(2), vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_empty_if_else() {
+        let mut lexer = Lexer::new("
+def foo()
+  if 1
+  else
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::IfTrue { val: Opnd::Const(Value::Int(1)), then_block: BlockId(1), else_block: BlockId(3) },
+        ]);
+        assert_block_equals(&prog, BlockId(1), vec![
+            Op::Jump { target: BlockId(3) },
+        ]);
+        assert_block_equals(&prog, BlockId(2), vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+        assert_block_equals(&prog, BlockId(3), vec![
+            Op::Jump { target: BlockId(2) },
+        ]);
     }
 }
