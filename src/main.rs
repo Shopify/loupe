@@ -121,7 +121,7 @@ impl LCG {
 
 #[derive(Clone, Debug)]
 pub struct Class {
-    //name: String,
+    name: String,
 
     // List of fields
     ivars: Vec<String>,
@@ -281,6 +281,7 @@ impl Program {
     pub fn new_class(&mut self) -> ClassId {
         let id = self.classes.len();
         self.classes.push(Class {
+            name: format!("$cls{id}"),
             ivars: Default::default(),
             methods: Default::default(),
             ctor: None
@@ -289,10 +290,11 @@ impl Program {
     }
 
     // Register a class and assign it an id
-    pub fn new_class_with_ctor(&mut self) -> (ClassId, (FunId, BlockId)) {
+    pub fn new_class_with_ctor(&mut self, name: String) -> (ClassId, (FunId, BlockId)) {
         let id = self.classes.len();
         let ctor = self.new_fun();
         self.classes.push(Class {
+            name,
             ivars: Default::default(),
             methods: HashMap::from([ ("initialize".into(), ctor.0) ]),
             ctor: Some(ctor.0)
@@ -1180,8 +1182,8 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
     // Generate a large number of classes
     let mut classes = Vec::new();
-    for _ in 0..num_classes {
-        let (class_id, (ctor_id, ctor_entry)) = prog.new_class_with_ctor();
+    for class_idx in 0..num_classes {
+        let (class_id, (ctor_id, ctor_entry)) = prog.new_class_with_ctor(format!("class_{class_idx}"));
         classes.push(class_id);
 
         // Set up a constructor for this class
@@ -2462,7 +2464,7 @@ mod sctp_tests {
     #[test]
     fn test_analyze_ctor_empty() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor("C".into());
         prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
         prog.push_insn(ctor_block_id, Op::Return { val: Opnd::Const(Value::Int(3)) });
         let result = analyze_ctor(&prog, class);
@@ -2472,7 +2474,7 @@ mod sctp_tests {
     #[test]
     fn test_analyze_set_ivar() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor("C".into());
         prog.push_ivar(class, "bar".into());
         prog.push_ivar(class, "foo".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
@@ -2485,7 +2487,7 @@ mod sctp_tests {
     #[test]
     fn test_analyze_set_ivar_one_branch() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor("C".into());
         prog.push_ivar(class, "foo".into());
         prog.push_ivar(class, "bar".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
@@ -2506,7 +2508,7 @@ mod sctp_tests {
     #[test]
     fn test_ivar_types() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
-        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor();
+        let (class, (ctor_fun_id, ctor_block_id)) = prog.new_class_with_ctor("C".into());
         prog.push_ivar(class, "foo".into());
         prog.push_ivar(class, "bar".into());
         let self_id = prog.push_insn(ctor_block_id, Op::SelfParam { class_id: class });
