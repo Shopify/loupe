@@ -1693,7 +1693,14 @@ impl<'a> Parser<'a> {
         let class_id = self.prog.new_class_with_name(name);
         while let Some(token) = self.input.next() {
             match token {
-                Token::AttrAccessor => todo!(),
+                Token::AttrAccessor => {
+                    self.expect(Token::Colon);
+                    let ivar_name = match self.input.next() {
+                        Some(Token::Ident(name)) => name.clone(),
+                        token => panic!("Unexpected token {token:?}"),
+                    };
+                    self.prog.push_ivar(class_id, ivar_name);
+                }
                 Token::Def => todo!(),
                 Token::End => { break; }
                 _ => panic!("Unexpected token {token:?}"),
@@ -3129,5 +3136,19 @@ end");
         parser.parse_program();
         assert_eq!(parser.prog.classes.len(), 5);
         assert_eq!(parser.prog.classes[4].name, "C");
+    }
+
+    #[test]
+    fn test_parse_class_with_ivars() {
+        let mut lexer = Lexer::new("
+class C
+  attr_accessor :a
+  attr_accessor :b
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 5);
+        assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ivars, vec!["a".to_string(), "b".to_string()]);
     }
 }
