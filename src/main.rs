@@ -3158,6 +3158,7 @@ end");
         parser.parse_program();
         assert_eq!(parser.prog.classes.len(), 5);
         assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ivars, Vec::<String>::new());
     }
 
     #[test]
