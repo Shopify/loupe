@@ -1496,6 +1496,7 @@ enum Token {
     Mul,
     Div,
     Equal,
+    Dot,
 }
 
 #[derive(PartialEq)]
@@ -1579,6 +1580,8 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Mul)
         } else if c == '=' {
             Some(Token::Equal)
+        } else if c == '.' {
+            Some(Token::Dot)
         } else {
             panic!("unhandled char {c}");
         }
@@ -1871,6 +1874,32 @@ impl<'a> Parser<'a> {
                             Opnd::Insn(self.prog.push_insn(self.block, Op::SendStatic { target, args })),
                         _ => panic!("Only static calls are supported (for now)"),
                     };
+                }
+                Some(Token::Dot) => {
+                    // Method call
+                    self.input.next();
+                    let method = match self.input.next() {
+                        Some(Token::Ident(method)) => method.clone(),
+                        token => panic!("Unexpected token {token:?}"),
+                    };
+                    self.expect(Token::LParen);
+                    let mut args = vec![];
+                    loop {
+                        match self.input.peek() {
+                            Some(Token::RParen) => { break; }
+                            Some(_) => {
+                                args.push(self.parse_(&mut env, 0));
+                                if self.input.peek() == Some(&Token::Comma) {
+                                    self.input.next();
+                                    continue;
+                                }
+                                break;
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    self.expect(Token::RParen);
+                    lhs = Opnd::Insn(self.prog.push_insn(self.block, Op::SendDynamic { method, self_val: lhs, args }));
                 }
                 Some(_) | None => { break; }
             }
@@ -2780,9 +2809,9 @@ end");
     }
 
     fn assert_block_equals(prog: &Program, block: BlockId, ops: Vec<Op>) {
-        assert_eq!(prog.blocks[block.0].insns.len(), ops.len());
+        assert_eq!(prog.blocks[block.0].insns.len(), ops.len(), "Block length mismatch");
         for (idx, insn_id) in prog.blocks[block.0].insns.iter().enumerate() {
-            assert_eq!(prog.insns[insn_id.0].op, ops[idx]);
+            assert_eq!(prog.insns[insn_id.0].op, ops[idx], "Argument mismatch");
         }
     }
 
@@ -2969,6 +2998,46 @@ end");
         ]);
         assert_block_equals(&prog, prog.funs[1].entry_block, vec![
             Op::SendStatic { target: FunId(0), args: vec![
+                Opnd::Const(Value::Int(1)),
+                Opnd::Const(Value::Int(2)),
+                Opnd::Const(Value::Int(3))
+            ] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_call_method_no_args() {
+        let mut lexer = Lexer::new("
+def foo(o)
+  o.bar()
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Param { idx: 0 },
+            Op::SendDynamic { method: "bar".into(), self_val: Opnd::Insn(InsnId(0)), args: vec![] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_call_method() {
+        let mut lexer = Lexer::new("
+def foo(o)
+  o.bar(1, 2, 3)
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Param { idx: 0 },
+            Op::SendDynamic { method: "bar".into(), self_val: Opnd::Insn(InsnId(0)), args: vec![
                 Opnd::Const(Value::Int(1)),
                 Opnd::Const(Value::Int(2)),
                 Opnd::Const(Value::Int(3))
