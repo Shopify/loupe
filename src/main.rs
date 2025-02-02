@@ -1620,6 +1620,7 @@ impl<'a> Parser<'a> {
             token => panic!("Unexpected token {token:?}"),
         };
         self.fun = fun_id;
+        self.block = block_id;
         self.expect(Token::LParen);
         let mut params: Vec<String> = vec![];
         loop {
@@ -2547,6 +2548,27 @@ mod parser_tests {
         assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
         assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
         assert_eq!(prog.insns[2].op, Op::Return { val: Opnd::Const(Value::Nil) });
+    }
+
+    #[test]
+    fn test_parse_two_functions() {
+        let mut lexer = Lexer::new("
+def foo(a, b) end
+def bar(c, d) end
+");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 2);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[2].op, Op::Return { val: Opnd::Const(Value::Nil) });
+
+        assert_eq!(prog.funs[1].name, "bar");
+        assert_eq!(prog.insns[3].op, Op::Param { idx: 0 });
+        assert_eq!(prog.insns[4].op, Op::Param { idx: 1 });
+        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
     }
 
     #[test]
