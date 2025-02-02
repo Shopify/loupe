@@ -1850,10 +1850,25 @@ impl<'a> Parser<'a> {
                 Some(Token::LParen) => {
                     // Function call
                     self.input.next();
+                    let mut args = vec![];
+                    loop {
+                        match self.input.peek() {
+                            Some(Token::RParen) => { break; }
+                            Some(_) => {
+                                args.push(self.parse_(&mut env, 0));
+                                if self.input.peek() == Some(&Token::Comma) {
+                                    self.input.next();
+                                    continue;
+                                }
+                                break;
+                            }
+                            _ => todo!(),
+                        }
+                    }
                     self.expect(Token::RParen);
                     lhs = match lhs {
                         Opnd::Const(Value::Fun(target)) =>
-                            Opnd::Insn(self.prog.push_insn(self.block, Op::SendStatic { target, args: vec![] })),
+                            Opnd::Insn(self.prog.push_insn(self.block, Op::SendStatic { target, args })),
                         _ => panic!("Only static calls are supported (for now)"),
                     };
                 }
@@ -2908,6 +2923,56 @@ end");
         ]);
         assert_block_equals(&prog, prog.funs[1].entry_block, vec![
             Op::SendStatic { target: FunId(0), args: vec![] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_call_one_arg() {
+        let mut lexer = Lexer::new("
+def bar()
+end
+def foo()
+  bar(1)
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 2);
+        assert_eq!(prog.funs[0].name, "bar");
+        assert_eq!(prog.funs[1].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+        assert_block_equals(&prog, prog.funs[1].entry_block, vec![
+            Op::SendStatic { target: FunId(0), args: vec![Opnd::Const(Value::Int(1))] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_call_multiple_args() {
+        let mut lexer = Lexer::new("
+def bar()
+end
+def foo()
+  bar(1, 2, 3)
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 2);
+        assert_eq!(prog.funs[0].name, "bar");
+        assert_eq!(prog.funs[1].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+        assert_block_equals(&prog, prog.funs[1].entry_block, vec![
+            Op::SendStatic { target: FunId(0), args: vec![
+                Opnd::Const(Value::Int(1)),
+                Opnd::Const(Value::Int(2)),
+                Opnd::Const(Value::Int(3))
+            ] },
             Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
     }
