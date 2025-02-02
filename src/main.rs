@@ -264,13 +264,13 @@ struct Program
 impl Default for Program {
     fn default() -> Program {
         let mut result = Program { classes: vec![], funs: vec![], blocks: vec![], insns: vec![], main: FunId(0) };
-        let c = result.new_class();
+        let c = result.new_class_with_name("NilClass".into());
         assert_eq!(c, NIL_CLASS);
-        let c = result.new_class();
+        let c = result.new_class_with_name("Integer".into());
         assert_eq!(c, INT_CLASS);
-        let c = result.new_class();
+        let c = result.new_class_with_name("TrueClass".into());
         assert_eq!(c, TRUE_CLASS);
-        let c = result.new_class();
+        let c = result.new_class_with_name("FalseClass".into());
         assert_eq!(c, FALSE_CLASS);
         result
     }
@@ -285,6 +285,18 @@ impl Program {
             ivars: Default::default(),
             methods: Default::default(),
             ctor: None
+        });
+        ClassId(id)
+    }
+
+    // Register a class and assign it an id
+    pub fn new_class_with_name(&mut self, name: String) -> ClassId {
+        let id = self.classes.len();
+        self.classes.push(Class {
+            name,
+            ivars: Default::default(),
+            methods: HashMap::default(),
+            ctor: None,
         });
         ClassId(id)
     }
