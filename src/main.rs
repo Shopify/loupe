@@ -471,6 +471,7 @@ pub enum Value {
     Nil,
     Int(i64),
     Bool(bool),
+    Fun(FunId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -1589,13 +1590,14 @@ struct Parser<'a> {
     prog: Program,
     fun: FunId,
     block: BlockId,
+    funs: HashMap<String, FunId>,
 }
 
 impl<'a> Parser<'a> {
     fn from_lexer(lexer: Lexer) -> Parser {
         let mut prog = Program::default();
         let (main_id, main_entry) = prog.new_fun();
-        Parser { input: lexer.peekable(), prog: Program::default(), fun: main_id, block: main_entry }
+        Parser { input: lexer.peekable(), prog: Program::default(), fun: main_id, block: main_entry, funs: HashMap::default() }
     }
 
     fn parse_program(&mut self) {
@@ -1615,8 +1617,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun(&mut self) {
-        let (fun_id, block_id) = match self.input.next() {
-            Some(Token::Ident(name)) => self.prog.new_fun_with_name(name),
+        let (name, (fun_id, block_id)) = match self.input.next() {
+            Some(Token::Ident(name)) => (name.clone(), self.prog.new_fun_with_name(name)),
             token => panic!("Unexpected token {token:?}"),
         };
         self.fun = fun_id;
@@ -1654,6 +1656,7 @@ impl<'a> Parser<'a> {
             self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
         }
         self.expect(Token::End);
+        self.funs.insert(name, fun_id);
     }
 
     fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
@@ -1817,7 +1820,11 @@ impl<'a> Parser<'a> {
                         if name == "true" { Opnd::Const(Value::Bool(true)) }
                         else if name == "false" { Opnd::Const(Value::Bool(false)) }
                         else if name == "nil" { Opnd::Const(Value::Nil) }
-                        else { *env.get(&name).unwrap_or_else(|| panic!("Unbound name {name}")) }
+                        else {
+                            self.funs.get(&name).and_then(|fun_id| Some(Opnd::Const(Value::Fun(*fun_id))))
+                                .unwrap_or_else(|| *env.get(&name)
+                                    .unwrap_or_else(|| panic!("Unbound name {name}")))
+                        }
                     }
                 }
             }
@@ -1839,6 +1846,16 @@ impl<'a> Parser<'a> {
                         Token::Mul => Op::Mul { v0: lhs, v1: rhs },
                         _ => todo!(),
                     }));
+                }
+                Some(Token::LParen) => {
+                    // Function call
+                    self.input.next();
+                    self.expect(Token::RParen);
+                    lhs = match lhs {
+                        Opnd::Const(Value::Fun(target)) =>
+                            Opnd::Insn(self.prog.push_insn(self.block, Op::SendStatic { target, args: vec![] })),
+                        _ => panic!("Only static calls are supported (for now)"),
+                    };
                 }
                 Some(_) | None => { break; }
             }
@@ -2869,6 +2886,29 @@ end");
             Op::Add { v0: Opnd::Insn(InsnId(4)), v1: Opnd::Insn(InsnId(12)) },
             Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(13)) },
             Op::Return { val: Opnd::Insn(InsnId(14)) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_call_no_args() {
+        let mut lexer = Lexer::new("
+def bar()
+end
+def foo()
+  bar()
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 2);
+        assert_eq!(prog.funs[0].name, "bar");
+        assert_eq!(prog.funs[1].name, "foo");
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+        assert_block_equals(&prog, prog.funs[1].entry_block, vec![
+            Op::SendStatic { target: FunId(0), args: vec![] },
+            Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
     }
 }
