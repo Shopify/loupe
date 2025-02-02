@@ -2560,6 +2560,20 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_if() {
+        let mut lexer = Lexer::new("   if");
+        assert_eq!(lexer.next(), Some(Token::If));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_else() {
+        let mut lexer = Lexer::new("   else");
+        assert_eq!(lexer.next(), Some(Token::Else));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_ident() {
         let mut lexer = Lexer::new("   abc");
         assert_eq!(lexer.next(), Some(Token::Ident("abc".into())));
@@ -2599,6 +2613,13 @@ mod parser_tests {
     fn test_lex_equal() {
         let mut lexer = Lexer::new("   =");
         assert_eq!(lexer.next(), Some(Token::Equal));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_dot() {
+        let mut lexer = Lexer::new("   .");
+        assert_eq!(lexer.next(), Some(Token::Dot));
         assert_eq!(lexer.next(), None);
     }
 
