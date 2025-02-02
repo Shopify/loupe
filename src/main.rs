@@ -3158,6 +3158,8 @@ end");
         parser.parse_program();
         assert_eq!(parser.prog.classes.len(), 5);
         assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, None);
+        assert_eq!(parser.prog.classes[4].methods, HashMap::new());
         assert_eq!(parser.prog.classes[4].ivars, Vec::<String>::new());
     }
 
@@ -3172,6 +3174,8 @@ end");
         parser.parse_program();
         assert_eq!(parser.prog.classes.len(), 5);
         assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, None);
+        assert_eq!(parser.prog.classes[4].methods, HashMap::new());
         assert_eq!(parser.prog.classes[4].ivars, vec!["a".to_string(), "b".to_string()]);
     }
 }
