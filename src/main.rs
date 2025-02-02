@@ -1656,6 +1656,41 @@ impl<'a> Parser<'a> {
         self.expect(Token::End);
     }
 
+    fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
+                 left_block: BlockId, left_env: &HashMap<String, Opnd>,
+                 right_block: BlockId, right_env: &HashMap<String, Opnd>) {
+        let all_keys_set: HashSet<&String> = HashSet::from_iter(left_env.keys().chain(right_env.keys()));
+        let mut all_keys: Vec<&String> = all_keys_set.into_iter().collect();
+        all_keys.sort();  // Stable Phi ordering
+        for key in all_keys {
+            match (left_env.get(key), right_env.get(key)) {
+                (Some(left), Some(right)) if left == right => {}
+                (Some(left), Some(right)) => {
+                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
+                        (left_block, *left),
+                        (right_block, *right),
+                    ] });
+                    env.insert(key.clone(), Opnd::Insn(phi));
+                }
+                (Some(left), None) => {
+                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
+                        (left_block, *left),
+                        (right_block, Opnd::Const(Value::Nil)),
+                    ] });
+                    env.insert(key.clone(), Opnd::Insn(phi));
+                }
+                (None, Some(right)) => {
+                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
+                        (left_block, Opnd::Const(Value::Nil)),
+                        (right_block, *right),
+                    ] });
+                    env.insert(key.clone(), Opnd::Insn(phi));
+                }
+                (None, None) => panic!("Should not happen"),
+            }
+        }
+    }
+
     fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) {
         match self.input.peek() {
             Some(Token::Return) => {
@@ -1666,6 +1701,7 @@ impl<'a> Parser<'a> {
             Some(Token::If) => {
                 self.input.next();
                 let val = self.parse_expression(&mut env);
+                let mut then_env = env.clone();
                 let if_block = self.block;
                 let then_block = self.prog.new_block(self.fun);
                 let join_block = self.prog.new_block(self.fun);
@@ -1677,6 +1713,8 @@ impl<'a> Parser<'a> {
                             self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block: join_block });
                             self.prog.push_insn(self.block, Op::Jump { target: join_block });
                             self.block = join_block;
+                            let if_env = env.clone();
+                            self.join_vars(&mut env, if_block, &if_env, then_block, &then_env);
                             return;
                         }
                         Some(Token::Else) => {
@@ -1684,10 +1722,11 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         _ => {
-                            self.parse_statement(&mut env);
+                            self.parse_statement(&mut then_env);
                         }
                     }
                 }
+                let mut else_env = env.clone();
                 let else_block = self.prog.new_block(self.fun);
                 self.prog.push_insn(self.block, Op::Jump { target: else_block });
                 self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block });
@@ -1698,10 +1737,11 @@ impl<'a> Parser<'a> {
                             self.input.next();
                             self.prog.push_insn(self.block, Op::Jump { target: join_block });
                             self.block = join_block;
+                            self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
                             return;
                         }
                         _ => {
-                            self.parse_statement(&mut env);
+                            self.parse_statement(&mut else_env);
                         }
                     }
                 }
@@ -2722,6 +2762,74 @@ end");
         ]);
         assert_block_equals(&prog, BlockId(3), vec![
             Op::Jump { target: BlockId(2) },
+        ]);
+    }
+
+    #[test]
+    fn test_if_phi() {
+        // a is defined before and modified in both branches
+        // b is defiend before and modified only in then
+        // c is defined before and modified only ine lse
+        // d is defined in then and in else
+        // e is defined before and not modified
+        // f is defined only in then
+        // g is defined only in else
+        let mut lexer = Lexer::new("
+def foo()
+  a = 1
+  b = 4
+  c = 6
+  e = 10
+  if 1
+    a = 2
+    b = 5
+    d = 8
+    f = 11
+  else
+    a = 3
+    c = 7
+    d = 9
+    g = 12
+  end
+  return a+b+c+d+e+f+g
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_block_equals(&prog, BlockId(2), vec![
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(2))),
+                (BlockId(3), Opnd::Const(Value::Int(3))),
+            ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(5))),
+                (BlockId(3), Opnd::Const(Value::Int(4))),
+            ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(6))),
+                (BlockId(3), Opnd::Const(Value::Int(7))),
+            ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(8))),
+                (BlockId(3), Opnd::Const(Value::Int(9))),
+            ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(11))),
+                (BlockId(3), Opnd::Const(Value::Nil)),
+            ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Nil)),
+                (BlockId(3), Opnd::Const(Value::Int(12))),
+            ] },
+            Op::Add { v0: Opnd::Insn(InsnId(7)), v1: Opnd::Insn(InsnId(8)) },
+            Op::Add { v0: Opnd::Const(Value::Int(10)), v1: Opnd::Insn(InsnId(9)) },
+            Op::Add { v0: Opnd::Insn(InsnId(6)), v1: Opnd::Insn(InsnId(10)) },
+            Op::Add { v0: Opnd::Insn(InsnId(5)), v1: Opnd::Insn(InsnId(11)) },
+            Op::Add { v0: Opnd::Insn(InsnId(4)), v1: Opnd::Insn(InsnId(12)) },
+            Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(13)) },
+            Op::Return { val: Opnd::Insn(InsnId(14)) },
         ]);
     }
 }
