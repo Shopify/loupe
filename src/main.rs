@@ -1834,7 +1834,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd{
+    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
         self.parse_(&mut env, 0)
     }
 
