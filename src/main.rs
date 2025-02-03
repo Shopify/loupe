@@ -1633,6 +1633,8 @@ impl<'a> Iterator for Lexer<'a> {
 struct Parser<'a> {
     input: std::iter::Peekable<Lexer<'a>>,
     prog: Program,
+    class: Option<ClassId>,
+    self_param: Option<InsnId>,
     fun: FunId,
     block: BlockId,
     funs: HashMap<String, FunId>,
@@ -1642,7 +1644,7 @@ impl<'a> Parser<'a> {
     fn from_lexer(lexer: Lexer) -> Parser {
         let mut prog = Program::default();
         let (main_id, main_entry) = prog.new_fun();
-        Parser { input: lexer.peekable(), prog: Program::default(), fun: main_id, block: main_entry, funs: HashMap::default() }
+        Parser { input: lexer.peekable(), prog: Program::default(), class: None, self_param: None, fun: main_id, block: main_entry, funs: HashMap::default() }
     }
 
     fn parse_program(&mut self) {
@@ -1688,6 +1690,9 @@ impl<'a> Parser<'a> {
         }
         self.expect(Token::RParen);
         let mut env: HashMap<String, Opnd> = HashMap::new();
+        if let Some(class_id) = self.class {
+            self.self_param = Some(self.prog.push_insn(block_id, Op::SelfParam { class_id }));
+        }
         for (idx, param) in params.iter().enumerate() {
             let insn_id = self.prog.push_insn(block_id, Op::Param { idx });
             env.insert(param.clone(), Opnd::Insn(insn_id));
@@ -1703,6 +1708,7 @@ impl<'a> Parser<'a> {
             self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
         }
         self.expect(Token::End);
+        self.self_param = None;
         (fun_id, name)
     }
 
@@ -1712,6 +1718,7 @@ impl<'a> Parser<'a> {
             token => panic!("Unexpected token {token:?}"),
         };
         let class_id = self.prog.new_class_with_name(name);
+        self.class = Some(class_id);
         while let Some(token) = self.input.next() {
             match token {
                 Token::AttrAccessor => {
@@ -1734,6 +1741,7 @@ impl<'a> Parser<'a> {
                 _ => panic!("Unexpected token {token:?}"),
             }
         }
+        self.class = None;
     }
 
     fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
@@ -3243,11 +3251,18 @@ class C
 end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
-        assert_eq!(parser.prog.classes.len(), 5);
-        assert_eq!(parser.prog.classes[4].name, "C");
-        assert_eq!(parser.prog.classes[4].ctor, None);
-        assert_eq!(parser.prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("bar".into(), FunId(1))]));
-        assert_eq!(parser.prog.classes[4].ivars, Vec::<String>::new());
+        let prog = &parser.prog;
+        assert_eq!(prog.classes.len(), 5);
+        assert_eq!(prog.classes[4].name, "C");
+        assert_eq!(prog.classes[4].ctor, None);
+        assert_eq!(prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("bar".into(), FunId(1))]));
+        assert_eq!(prog.classes[4].ivars, Vec::<String>::new());
+        assert_block_equals(&prog, prog.funs[0].entry_block, vec![
+            Op::SelfParam { class_id: ClassId(4) },
+            Op::Param { idx: 0 },
+            Op::Param { idx: 1 },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
     }
 
     #[test]
