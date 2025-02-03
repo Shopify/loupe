@@ -1529,6 +1529,7 @@ enum Token {
     Less,
     Dot,
     Colon,
+    At,
 }
 
 #[derive(PartialEq)]
@@ -1624,6 +1625,8 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Dot)
         } else if c == ':' {
             Some(Token::Colon)
+        } else if c == '@' {
+            Some(Token::At)
         } else {
             panic!("unhandled char {c}");
         }
@@ -1660,6 +1663,13 @@ impl<'a> Parser<'a> {
     fn expect(&mut self, expected: Token) {
         match self.input.next() {
             Some(actual) if actual == expected => {},
+            actual => panic!("Unexpected token {actual:?}"),
+        }
+    }
+
+    fn expect_ident(&mut self) -> String {
+        match self.input.next() {
+            Some(Token::Ident(name)) => name.clone(),
             actual => panic!("Unexpected token {actual:?}"),
         }
     }
@@ -1890,8 +1900,31 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn get_self(&self) -> Opnd {
+        match self.self_param {
+            Some(insn_id) => Opnd::Insn(insn_id),
+            _ => panic!("Cannot use @-syntax for ivars outside of a method"),
+        }
+    }
+
     fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
         let mut lhs = match self.input.peek() {
+            Some(Token::At) => {
+                // ivar
+                self.input.next();
+                let name = self.expect_ident();
+                match self.input.peek() {
+                    // TODO(max): Something about precedence. Don't allow if > 0?
+                    Some(Token::Equal) => {
+                        self.input.next();
+                        let rhs = self.parse_expression(&mut env);
+                        Opnd::Insn(self.prog.push_insn(self.block, Op::SetIvar { name, self_val: self.get_self(), val: rhs }))
+                    }
+                    _ => {
+                        Opnd::Insn(self.prog.push_insn(self.block, Op::GetIvar { name, self_val: self.get_self() }))
+                    }
+                }
+            }
             Some(Token::Ident(name)) => {
                 let name = name.clone();
                 self.input.next();
@@ -2746,6 +2779,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_at() {
+        let mut lexer = Lexer::new("   @");
+        assert_eq!(lexer.next(), Some(Token::At));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_digit() {
         let mut lexer = Lexer::new("   1");
         assert_eq!(lexer.next(), Some(Token::Int(1)));
@@ -3304,6 +3344,52 @@ end");
         assert_eq!(parser.prog.classes[4].ctor, None);
         assert_eq!(parser.prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("bar".into(), FunId(1))]));
         assert_eq!(parser.prog.classes[4].ivars, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_method_set_ivar() {
+        let mut lexer = Lexer::new("
+class C
+  def foo()
+    @a = 1
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = &parser.prog;
+        assert_eq!(prog.classes.len(), 5);
+        assert_eq!(prog.classes[4].name, "C");
+        assert_eq!(prog.classes[4].ctor, None);
+        assert_eq!(prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0))]));
+        assert_eq!(prog.classes[4].ivars, Vec::<String>::new());
+        assert_block_equals(prog, prog.funs[0].entry_block, vec![
+            Op::SelfParam { class_id: ClassId(4) },
+            Op::SetIvar { self_val: Opnd::Insn(InsnId(0)), name: "a".into(), val: Opnd::Const(Value::Int(1)) },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_method_get_ivar() {
+        let mut lexer = Lexer::new("
+class C
+  def foo()
+    @a
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = &parser.prog;
+        assert_eq!(prog.classes.len(), 5);
+        assert_eq!(prog.classes[4].name, "C");
+        assert_eq!(prog.classes[4].ctor, None);
+        assert_eq!(prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0))]));
+        assert_eq!(prog.classes[4].ivars, Vec::<String>::new());
+        assert_block_equals(prog, prog.funs[0].entry_block, vec![
+            Op::SelfParam { class_id: ClassId(4) },
+            Op::GetIvar { self_val: Opnd::Insn(InsnId(0)), name: "a".into() },
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
     }
 
     #[test]
