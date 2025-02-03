@@ -1967,7 +1967,7 @@ impl<'a> Parser<'a> {
                     let method = self.expect_ident();
                     if self.input.peek() != Some(&Token::LParen) {
                         if method == "new" {
-                            panic!("Can only call method `new' on classes; got {method}");
+                            panic!("Can only call method `new' on classes. Did you mean to add parentheses?");
                         }
                         lhs = Opnd::Insn(self.prog.push_insn(self.block, Op::GetIvar { name: method, self_val: lhs }));
                         continue;
