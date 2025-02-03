@@ -1697,15 +1697,8 @@ impl<'a> Parser<'a> {
         self.block = block_id;
         self.expect(Token::LParen);
         let mut params: Vec<String> = vec![];
-        loop {
-            match self.input.peek() {
-                Some(Token::RParen) => { break; }
-                Some(Token::Ident(param)) => {
-                    params.push(param.clone());
-                    self.input.next();
-                }
-                token => panic!("Unexpected token {token:?}"),
-            }
+        while self.input.peek() != Some(&Token::RParen) {
+            params.push(self.expect_ident());
             if !self.match_token(Token::Comma) { break; }
         }
         self.expect(Token::RParen);
@@ -1713,16 +1706,12 @@ impl<'a> Parser<'a> {
         if let Some(class_id) = self.class {
             self.self_param = Some(self.prog.push_insn(block_id, Op::SelfParam { class_id }));
         }
-        for (idx, param) in params.iter().enumerate() {
+        for (idx, param) in params.into_iter().enumerate() {
             let insn_id = self.prog.push_insn(block_id, Op::Param { idx });
-            env.insert(param.clone(), Opnd::Insn(insn_id));
+            env.insert(param, Opnd::Insn(insn_id));
         }
-        loop {
-            match self.input.peek() {
-                Some(Token::End) => { break; }
-                Some(_) => { self.parse_statement(&mut env); }
-                None => panic!("Unexpected EOF while parsing function"),
-            }
+        while self.input.peek() != Some(&Token::End) {
+            self.parse_statement(&mut env);
         }
         if !self.prog.block_is_terminated(self.block) {
             self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
@@ -1981,15 +1970,9 @@ impl<'a> Parser<'a> {
                     // Function call
                     self.input.next();
                     let mut args = vec![];
-                    loop {
-                        match self.input.peek() {
-                            Some(Token::RParen) => { break; }
-                            Some(_) => {
-                                args.push(self.parse_(&mut env, 0));
-                                if !self.match_token(Token::Comma) { break; }
-                            }
-                            _ => todo!(),
-                        }
+                    while self.input.peek() != Some(&Token::RParen) {
+                        args.push(self.parse_(&mut env, 0));
+                        if !self.match_token(Token::Comma) { break; }
                     }
                     self.expect(Token::RParen);
                     lhs = match lhs {
@@ -2014,15 +1997,9 @@ impl<'a> Parser<'a> {
                     }
                     self.expect(Token::LParen);
                     let mut args = vec![];
-                    loop {
-                        match self.input.peek() {
-                            Some(Token::RParen) => { break; }
-                            Some(_) => {
-                                args.push(self.parse_(&mut env, 0));
-                                if !self.match_token(Token::Comma) { break; }
-                            }
-                            _ => todo!(),
-                        }
+                    while self.input.peek() != Some(&Token::RParen) {
+                        args.push(self.parse_(&mut env, 0));
+                        if !self.match_token(Token::Comma) { break; }
                     }
                     self.expect(Token::RParen);
                     if let Opnd::Const(Value::Class(class_id)) = lhs {
