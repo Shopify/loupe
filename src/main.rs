@@ -1884,8 +1884,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn paren(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
-        match self.input.peek() {
+    fn get_self(&self) -> Opnd {
+        match self.self_param {
+            Some(insn_id) => Opnd::Insn(insn_id),
+            _ => panic!("Cannot use @-syntax for ivars outside of a method"),
+        }
+    }
+
+    fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
+        let mut lhs = match self.input.peek() {
             None => panic!("Unexpected EOF"),
             Some(Token::Int(lit)) => {
                 let lit = *lit;
@@ -1898,19 +1905,6 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RParen);
                 result
             }
-            token => panic!("Unexpected token {token:?}"),
-        }
-    }
-
-    fn get_self(&self) -> Opnd {
-        match self.self_param {
-            Some(insn_id) => Opnd::Insn(insn_id),
-            _ => panic!("Cannot use @-syntax for ivars outside of a method"),
-        }
-    }
-
-    fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
-        let mut lhs = match self.input.peek() {
             Some(Token::At) => {
                 // ivar
                 self.input.next();
@@ -1958,7 +1952,7 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            _ => self.paren(&mut env),
+            token => panic!("Unexpected token {token:?}"),
         };
         loop {
             match self.input.peek() {
