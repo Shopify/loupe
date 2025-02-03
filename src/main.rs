@@ -333,6 +333,14 @@ impl Program {
         (m_id, b_id)
     }
 
+    // Register a method associated with a class
+    pub fn register_method(&mut self, class_id: ClassId, name: String, fun_id: FunId) {
+        // Register the method with the given class
+        let k = &mut self.classes[class_id.0];
+        assert!(!k.methods.contains_key(&name));
+        k.methods.insert(name, fun_id);
+    }
+
     // Register a named function and assign it an id
     pub fn new_fun_with_name(&mut self, name: String) -> (FunId, BlockId) {
         let id = FunId(self.funs.len());
@@ -1634,7 +1642,7 @@ impl<'a> Parser<'a> {
     fn parse_program(&mut self) {
         while let Some(token) = self.input.next() {
             match token {
-                Token::Def => self.parse_fun(),
+                Token::Def => { self.parse_fun(); },
                 Token::Class => self.parse_class(),
                 _ => panic!("Unexpected token {token:?}"),
             }
@@ -1648,7 +1656,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_fun(&mut self) {
+    fn parse_fun(&mut self) -> (FunId, String) {
         let (name, (fun_id, block_id)) = match self.input.next() {
             Some(Token::Ident(name)) => (name.clone(), self.prog.new_fun_with_name(name)),
             token => panic!("Unexpected token {token:?}"),
@@ -1688,7 +1696,8 @@ impl<'a> Parser<'a> {
             self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
         }
         self.expect(Token::End);
-        self.funs.insert(name, fun_id);
+        self.funs.insert(name.clone(), fun_id);
+        (fun_id, name)
     }
 
     fn parse_class(&mut self) {
@@ -1707,7 +1716,14 @@ impl<'a> Parser<'a> {
                     };
                     self.prog.push_ivar(class_id, ivar_name);
                 }
-                Token::Def => todo!(),
+                Token::Def => {
+                    let (fun_id, name) = self.parse_fun();
+                    if name == "initialize" {
+                        assert!(self.prog.classes[class_id.0].ctor.is_none());
+                        self.prog.classes[class_id.0].ctor = Some(fun_id);
+                    }
+                    self.prog.register_method(class_id, name, fun_id);
+                }
                 Token::End => { break; }
                 _ => panic!("Unexpected token {token:?}"),
             }
@@ -3183,5 +3199,81 @@ end");
         assert_eq!(parser.prog.classes[4].ctor, None);
         assert_eq!(parser.prog.classes[4].methods, HashMap::new());
         assert_eq!(parser.prog.classes[4].ivars, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_class_with_methods() {
+        let mut lexer = Lexer::new("
+class C
+  def foo(a, b)
+  end
+
+  def bar(a, b)
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 5);
+        assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, None);
+        assert_eq!(parser.prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("bar".into(), FunId(1))]));
+        assert_eq!(parser.prog.classes[4].ivars, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_parse_class_with_ctor() {
+        let mut lexer = Lexer::new("
+class C
+  def foo(a, b)
+  end
+
+  def initialize(a, b)
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 5);
+        assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, Some(FunId(1)));
+        assert_eq!(parser.prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("initialize".into(), FunId(1))]));
+        assert_eq!(parser.prog.classes[4].ivars, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_parse_class_with_ivars_and_methods() {
+        let mut lexer = Lexer::new("
+class C
+  attr_accessor :a
+  attr_accessor :b
+
+  def foo(a, b)
+  end
+
+  def bar(a, b)
+  end
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 5);
+        assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, None);
+        assert_eq!(parser.prog.classes[4].methods, HashMap::from([("foo".into(), FunId(0)), ("bar".into(), FunId(1))]));
+        assert_eq!(parser.prog.classes[4].ivars, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_classes() {
+        let mut lexer = Lexer::new("
+class C
+end
+class D
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        assert_eq!(parser.prog.classes.len(), 6);
+        assert_eq!(parser.prog.classes[4].name, "C");
+        assert_eq!(parser.prog.classes[4].ctor, None);
+        assert_eq!(parser.prog.classes[5].name, "D");
+        assert_eq!(parser.prog.classes[5].ctor, None);
     }
 }
