@@ -1665,6 +1665,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn match_token(&mut self, expected: Token) -> bool {
+        match self.input.peek() {
+            Some(actual) if *actual == expected => { self.input.next(); true },
+            actual => false,
+        }
+    }
+
     fn expect(&mut self, expected: Token) {
         match self.input.next() {
             Some(actual) if actual == expected => {},
@@ -1699,10 +1706,7 @@ impl<'a> Parser<'a> {
                 }
                 token => panic!("Unexpected token {token:?}"),
             }
-            match self.input.peek() {
-                Some(Token::Comma) => { self.input.next(); }
-                _ => { break; }
-            }
+            if !self.match_token(Token::Comma) { break; }
         }
         self.expect(Token::RParen);
         let mut env: HashMap<String, Opnd> = HashMap::new();
@@ -1982,11 +1986,7 @@ impl<'a> Parser<'a> {
                             Some(Token::RParen) => { break; }
                             Some(_) => {
                                 args.push(self.parse_(&mut env, 0));
-                                if self.input.peek() == Some(&Token::Comma) {
-                                    self.input.next();
-                                    continue;
-                                }
-                                break;
+                                if !self.match_token(Token::Comma) { break; }
                             }
                             _ => todo!(),
                         }
@@ -2019,11 +2019,7 @@ impl<'a> Parser<'a> {
                             Some(Token::RParen) => { break; }
                             Some(_) => {
                                 args.push(self.parse_(&mut env, 0));
-                                if self.input.peek() == Some(&Token::Comma) {
-                                    self.input.next();
-                                    continue;
-                                }
-                                break;
+                                if !self.match_token(Token::Comma) { break; }
                             }
                             _ => todo!(),
                         }
