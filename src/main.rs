@@ -1745,7 +1745,7 @@ impl<'a> Parser<'a> {
             }
         }
         assert!(!self.classes.contains_key(&name));
-        self.classes.insert(name.clone(), class_id);
+        self.classes.insert(name, class_id);
         self.class = None;
     }
 
