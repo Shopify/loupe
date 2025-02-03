@@ -1914,9 +1914,8 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            Some(Token::Ident(name)) => {
-                let name = name.clone();
-                self.input.next();
+            _ => {
+                let name = self.expect_ident();
                 match self.input.peek() {
                     // TODO(max): Something about precedence. Don't allow if > 0?
                     Some(Token::Equal) => {
@@ -1945,7 +1944,6 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            token => panic!("Unexpected token {token:?}"),
         };
         loop {
             match self.input.peek() {
