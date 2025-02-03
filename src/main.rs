@@ -1948,6 +1948,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.input.peek() {
                 Some(op @ (Token::Plus | Token::Minus | Token::Mul | Token::Div | Token::Less)) => {
+                    // Binary operation using precedence climbing
                     let op = op.clone();
                     let op_prec = Self::prec(&op);
                     if op_prec < prec {
