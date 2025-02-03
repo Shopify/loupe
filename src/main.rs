@@ -1586,23 +1586,14 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        if result == "def" {
-            Token::Def
-        } else if result == "end" {
-            Token::End
-        } else if result == "return" {
-            Token::Return
-        } else if result == "if" {
-            Token::If
-        } else if result == "else" {
-            Token::Else
-        } else if result == "class" {
-            Token::Class
-        } else if result == "attr_accessor" {
-            Token::AttrAccessor
-        } else {
-            Token::Ident(result)
-        }
+        if result == "def" { Token::Def }
+        else if result == "end" { Token::End }
+        else if result == "return" { Token::Return }
+        else if result == "if" { Token::If }
+        else if result == "else" { Token::Else }
+        else if result == "class" { Token::Class }
+        else if result == "attr_accessor" { Token::AttrAccessor }
+        else { Token::Ident(result) }
     }
 
     fn read_int(&mut self, start: char) -> Token {
@@ -1689,10 +1680,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fun(&mut self) -> (FunId, String) {
-        let (name, (fun_id, block_id)) = match self.input.next() {
-            Some(Token::Ident(name)) => (name.clone(), self.prog.new_fun_with_name(name)),
-            token => panic!("Unexpected token {token:?}"),
-        };
+        let name = self.expect_ident();
+        let (fun_id, block_id) = self.prog.new_fun_with_name(name.clone());
         if name == "main" && self.class.is_none() {
             self.prog.main = fun_id;
         }
@@ -1702,7 +1691,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::LParen);
         let mut params: Vec<String> = vec![];
         loop {
-            match self.input.peek () {
+            match self.input.peek() {
                 Some(Token::RParen) => { break; }
                 Some(Token::Ident(param)) => {
                     params.push(param.clone());
@@ -1740,20 +1729,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_class(&mut self) {
-        let name = match self.input.next() {
-            Some(Token::Ident(name)) => name.clone(),
-            token => panic!("Unexpected token {token:?}"),
-        };
+        let name = self.expect_ident();
         let class_id = self.prog.new_class_with_name(name.clone());
         self.class = Some(class_id);
         while let Some(token) = self.input.next() {
             match token {
                 Token::AttrAccessor => {
                     self.expect(Token::Colon);
-                    let ivar_name = match self.input.next() {
-                        Some(Token::Ident(name)) => name.clone(),
-                        token => panic!("Unexpected token {token:?}"),
-                    };
+                    let ivar_name = self.expect_ident();
                     self.prog.push_ivar(class_id, ivar_name);
                 }
                 Token::Def => {
