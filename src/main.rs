@@ -1982,10 +1982,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Dot) => {
                     // Method call or ivar read
                     self.input.next();
-                    let method = match self.input.next() {
-                        Some(Token::Ident(method)) => method.clone(),
-                        token => panic!("Unexpected token {token:?}"),
-                    };
+                    let method = self.expect_ident();
                     if self.input.peek() != Some(&Token::LParen) {
                         if method == "new" {
                             panic!("Can only call method `new' on classes; got {method}");
