@@ -3424,7 +3424,7 @@ class C
   end
 end
 def main()
-    return C.new()
+  return C.new()
 end
 ");
         let mut parser = Parser::from_lexer(lexer);
@@ -3448,7 +3448,7 @@ class C
   end
 end
 def main()
-    return C.new(1, 2)
+  return C.new(1, 2)
 end
 ");
         let mut parser = Parser::from_lexer(lexer);
