@@ -1629,35 +1629,20 @@ impl<'a> Iterator for Lexer<'a> {
         let c = self.input.find(|c| !c.is_whitespace());
         if c.is_none() { return None; }
         let c = c.unwrap();
-        if c.is_alphabetic() {
-            Some(self.read_word(c))
-        } else if c.is_digit(RADIX) {
-            Some(self.read_int(c))
-        } else if c == '(' {
-            Some(Token::LParen)
-        } else if c == ')' {
-            Some(Token::RParen)
-        } else if c == ',' {
-            Some(Token::Comma)
-        } else if c == '+' {
-            Some(Token::Plus)
-        } else if c == '-' {
-            Some(Token::Minus)
-        } else if c == '*' {
-            Some(Token::Mul)
-        } else if c == '=' {
-            Some(Token::Equal)
-        } else if c == '<' {
-            Some(Token::Less)
-        } else if c == '.' {
-            Some(Token::Dot)
-        } else if c == ':' {
-            Some(Token::Colon)
-        } else if c == '@' {
-            Some(Token::At)
-        } else {
-            panic!("unhandled char {c}");
-        }
+        if c.is_alphabetic() { Some(self.read_word(c)) }
+        else if c.is_digit(RADIX) { Some(self.read_int(c)) }
+        else if c == '(' { Some(Token::LParen) }
+        else if c == ')' { Some(Token::RParen) }
+        else if c == ',' { Some(Token::Comma) }
+        else if c == '+' { Some(Token::Plus) }
+        else if c == '-' { Some(Token::Minus) }
+        else if c == '*' { Some(Token::Mul) }
+        else if c == '=' { Some(Token::Equal) }
+        else if c == '<' { Some(Token::Less) }
+        else if c == '.' { Some(Token::Dot) }
+        else if c == ':' { Some(Token::Colon) }
+        else if c == '@' { Some(Token::At) }
+        else { panic!("unhandled char {c}"); }
     }
 }
 
