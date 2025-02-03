@@ -523,6 +523,7 @@ enum Op
 {
     Phi { ins: Vec<(BlockId, Opnd)> },
     Add { v0: Opnd, v1: Opnd },
+    Sub { v0: Opnd, v1: Opnd },
     Mul { v0: Opnd, v1: Opnd },
     LessThan { v0: Opnd, v1: Opnd },
     IsNil { v: Opnd },
@@ -951,7 +952,7 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
                     mark_use(opnd);
                 }
             }
-            Op::Add { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 } => {
+            Op::Add { v0, v1 } | Op::Sub { v0, v1 } | Op::Mul {v0, v1 } | Op::LessThan { v0, v1 } => {
                 mark_use(v0);
                 mark_use(v1);
             }
@@ -1525,6 +1526,7 @@ enum Token {
     Mul,
     Div,
     Equal,
+    Less,
     Dot,
     Colon,
 }
@@ -1610,10 +1612,14 @@ impl<'a> Iterator for Lexer<'a> {
             Some(Token::Comma)
         } else if c == '+' {
             Some(Token::Plus)
+        } else if c == '-' {
+            Some(Token::Minus)
         } else if c == '*' {
             Some(Token::Mul)
         } else if c == '=' {
             Some(Token::Equal)
+        } else if c == '<' {
+            Some(Token::Less)
         } else if c == '.' {
             Some(Token::Dot)
         } else if c == ':' {
@@ -1661,6 +1667,7 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => (name.clone(), self.prog.new_fun_with_name(name)),
             token => panic!("Unexpected token {token:?}"),
         };
+        self.funs.insert(name.clone(), fun_id);
         self.fun = fun_id;
         self.block = block_id;
         self.expect(Token::LParen);
@@ -1696,7 +1703,6 @@ impl<'a> Parser<'a> {
             self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
         }
         self.expect(Token::End);
-        self.funs.insert(name.clone(), fun_id);
         (fun_id, name)
     }
 
@@ -1785,7 +1791,9 @@ impl<'a> Parser<'a> {
                         Some(Token::End) => {
                             self.input.next();
                             self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block: join_block });
-                            self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            if !self.prog.block_is_terminated(self.block) {
+                                self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            }
                             self.block = join_block;
                             let if_env = env.clone();
                             self.join_vars(&mut env, if_block, &if_env, then_block, &then_env);
@@ -1802,14 +1810,18 @@ impl<'a> Parser<'a> {
                 }
                 let mut else_env = env.clone();
                 let else_block = self.prog.new_block(self.fun);
-                self.prog.push_insn(self.block, Op::Jump { target: else_block });
+                if !self.prog.block_is_terminated(self.block) {
+                    self.prog.push_insn(self.block, Op::Jump { target: else_block });
+                }
                 self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block });
                 self.block = else_block;
                 loop {
                     match self.input.peek() {
                         Some(Token::End) => {
                             self.input.next();
-                            self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            if !self.prog.block_is_terminated(self.block) {
+                                self.prog.push_insn(self.block, Op::Jump { target: join_block });
+                            }
                             self.block = join_block;
                             self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
                             return;
@@ -1830,6 +1842,7 @@ impl<'a> Parser<'a> {
 
     fn prec(token: &Token) -> i8 {
         match token {
+            Token::Less => 0,
             Token::Plus => 1,
             Token::Minus => 1,
             // TODO(max): Unary negate?
@@ -1846,6 +1859,7 @@ impl<'a> Parser<'a> {
             // TODO(max): Unary negate?
             Token::Mul => Assoc::Any,
             Token::Div => Assoc::Left,
+            Token::Less => Assoc::Left,
             _ => panic!("Don't know associativity of {token:?}"),
         }
     }
@@ -1903,7 +1917,7 @@ impl<'a> Parser<'a> {
         };
         loop {
             match self.input.peek() {
-                Some(op @ (Token::Plus | Token::Minus | Token::Mul | Token::Div)) => {
+                Some(op @ (Token::Plus | Token::Minus | Token::Mul | Token::Div | Token::Less)) => {
                     let op = op.clone();
                     let op_prec = Self::prec(&op);
                     if op_prec < prec {
@@ -1914,7 +1928,9 @@ impl<'a> Parser<'a> {
                     let rhs = self.parse_(&mut env, next_prec);
                     lhs = Opnd::Insn(self.prog.push_insn(self.block, match op {
                         Token::Plus => Op::Add { v0: lhs, v1: rhs },
+                        Token::Minus => Op::Sub { v0: lhs, v1: rhs },
                         Token::Mul => Op::Mul { v0: lhs, v1: rhs },
+                        Token::Less => Op::LessThan { v0: lhs, v1: rhs },
                         _ => todo!(),
                     }));
                 }
@@ -2680,6 +2696,13 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_lex_minus() {
+        let mut lexer = Lexer::new("   -");
+        assert_eq!(lexer.next(), Some(Token::Minus));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
     fn test_lex_mul() {
         let mut lexer = Lexer::new("   *");
         assert_eq!(lexer.next(), Some(Token::Mul));
@@ -2690,6 +2713,13 @@ mod parser_tests {
     fn test_lex_equal() {
         let mut lexer = Lexer::new("   =");
         assert_eq!(lexer.next(), Some(Token::Equal));
+        assert_eq!(lexer.next(), None);
+    }
+
+    #[test]
+    fn test_lex_less() {
+        let mut lexer = Lexer::new("   <");
+        assert_eq!(lexer.next(), Some(Token::Less));
         assert_eq!(lexer.next(), None);
     }
 
@@ -3275,5 +3305,39 @@ end");
         assert_eq!(parser.prog.classes[4].ctor, None);
         assert_eq!(parser.prog.classes[5].name, "D");
         assert_eq!(parser.prog.classes[5].ctor, None);
+    }
+
+    #[test]
+    fn test_parse_factorial() {
+        let mut lexer = Lexer::new("
+def factorial(n)
+  if n < 2
+    return 1
+  else
+    return n * factorial(n-1)
+  end
+end
+");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = &parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_block_equals(prog, prog.funs[0].entry_block, vec![
+            Op::Param { idx: 0 },
+            Op::LessThan { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Const(Value::Int(2)) },
+            Op::IfTrue { val: Opnd::Insn(InsnId(1)), then_block: BlockId(1), else_block: BlockId(3) },
+        ]);
+        assert_block_equals(prog, BlockId(1), vec![
+            Op::Return { val: Opnd::Const(Value::Int(1)) },
+        ]);
+        assert_block_equals(prog, BlockId(3), vec![
+            Op::Sub { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Const(Value::Int(1)) },
+            Op::SendStatic { target: FunId(0), args: vec![Opnd::Insn(InsnId(4))] },
+            Op::Mul { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(5)) },
+            Op::Return { val: Opnd::Insn(InsnId(6)) },
+        ]);
+        assert_block_equals(prog, BlockId(2), vec![
+            Op::Return { val: Opnd::Const(Value::Nil) },
+        ]);
     }
 }
