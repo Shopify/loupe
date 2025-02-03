@@ -1784,6 +1784,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_block(&mut self, mut env: &mut HashMap<String, Opnd>, and_then: BlockId) {
+        loop {
+            match self.input.peek() {
+                Some(Token::End) | Some(Token::Else) => {
+                    if !self.prog.block_is_terminated(self.block) {
+                        self.prog.push_insn(self.block, Op::Jump { target: and_then });
+                    }
+                    return;
+                }
+                _ => { self.parse_statement(&mut env); }
+            }
+        }
+    }
+
     fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) {
         match self.input.peek() {
             Some(Token::Return) => {
@@ -1794,56 +1808,27 @@ impl<'a> Parser<'a> {
             Some(Token::If) => {
                 self.input.next();
                 let val = self.parse_expression(&mut env);
-                let mut then_env = env.clone();
-                let if_block = self.block;
+                let before_if_block = self.block;
                 let then_block = self.prog.new_block(self.fun);
                 let join_block = self.prog.new_block(self.fun);
                 self.block = then_block;
-                loop {
-                    match self.input.peek() {
-                        Some(Token::End) => {
-                            self.input.next();
-                            self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block: join_block });
-                            if !self.prog.block_is_terminated(self.block) {
-                                self.prog.push_insn(self.block, Op::Jump { target: join_block });
-                            }
-                            self.block = join_block;
-                            let if_env = env.clone();
-                            self.join_vars(&mut env, if_block, &if_env, then_block, &then_env);
-                            return;
-                        }
-                        Some(Token::Else) => {
-                            self.input.next();
-                            break;
-                        }
-                        _ => {
-                            self.parse_statement(&mut then_env);
-                        }
-                    }
+                let mut then_env = env.clone();
+                self.parse_block(&mut then_env, join_block);
+                if self.match_token(Token::Else) {
+                    let else_block = self.prog.new_block(self.fun);
+                    self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block });
+                    let mut else_env = env.clone();
+                    self.block = else_block;
+                    self.parse_block(&mut else_env, join_block);
+                    self.block = join_block;
+                    self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
+                } else {
+                    self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block: join_block });
+                    self.block = join_block;
+                    let if_env = env.clone();
+                    self.join_vars(&mut env, before_if_block, &if_env, then_block, &then_env);
                 }
-                let mut else_env = env.clone();
-                let else_block = self.prog.new_block(self.fun);
-                if !self.prog.block_is_terminated(self.block) {
-                    self.prog.push_insn(self.block, Op::Jump { target: else_block });
-                }
-                self.prog.push_insn(if_block, Op::IfTrue { val, then_block, else_block });
-                self.block = else_block;
-                loop {
-                    match self.input.peek() {
-                        Some(Token::End) => {
-                            self.input.next();
-                            if !self.prog.block_is_terminated(self.block) {
-                                self.prog.push_insn(self.block, Op::Jump { target: join_block });
-                            }
-                            self.block = join_block;
-                            self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
-                            return;
-                        }
-                        _ => {
-                            self.parse_statement(&mut else_env);
-                        }
-                    }
-                }
+                self.expect(Token::End);
             }
             _ => { self.parse_expression(&mut env); }
         }
@@ -3050,7 +3035,7 @@ end");
             Op::IfTrue { val: Opnd::Const(Value::Int(1)), then_block: BlockId(1), else_block: BlockId(3) },
         ]);
         assert_block_equals(&prog, BlockId(1), vec![
-            Op::Jump { target: BlockId(3) },
+            Op::Jump { target: BlockId(2) },
         ]);
         assert_block_equals(&prog, BlockId(2), vec![
             Op::Return { val: Opnd::Const(Value::Nil) },
