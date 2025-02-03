@@ -626,15 +626,15 @@ fn sctp(prog: &Program) -> AnalysisResult
     let ivar_initialized: Vec<SmallBitSet> = (0..prog.classes.len()).map(|class_id|
         analyze_ctor(prog, ClassId(class_id))
     ).collect();
-    // TODO(max): Set all uninitialized ivars to nil in ivar_types
 
     // Map of ClassId->ivar types. Used jointly with ivar initialization bitsets.
     let num_classes = prog.classes.len();
     let mut ivar_types: Vec<HashMap<String, Type>> = Vec::with_capacity(num_classes);
     ivar_types.resize(num_classes, HashMap::new());
     for (class_id, class) in prog.classes.iter().enumerate() {
-        for ivar in &class.ivars {
-            ivar_types[class_id].insert(ivar.clone(), Type::Empty);
+        let init = ivar_initialized[class_id];
+        for (ivar_idx, ivar) in class.ivars.iter().enumerate() {
+            ivar_types[class_id].insert(ivar.clone(), if init.get(ivar_idx) { Type::Empty } else { Type::Const(Value::Nil) });
         }
     }
 
@@ -997,6 +997,11 @@ impl SmallBitSet {
 
     fn and(&self, other: SmallBitSet) -> SmallBitSet {
         SmallBitSet(self.0 & other.0)
+    }
+
+    fn get(&self, idx: usize) -> bool{
+        assert!(idx < 64);
+        ((self.0 >> idx) & 0x1) != 0
     }
 }
 
