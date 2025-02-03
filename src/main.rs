@@ -1510,6 +1510,29 @@ fn main()
 
     println!("itr count: {}", int_str_grouped(result.itr_count));
     println!("analysis time: {:.1} ms", time_ms);
+
+
+    let sample_program = "
+class Point
+  attr_accessor :x
+  attr_accessor :y
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+end
+
+def main()
+  p = Point.new(3, 4)
+  return p.x + p.y
+end
+";
+    let lexer = Lexer::new(sample_program);
+    let mut parser = Parser::from_lexer(lexer);
+    parser.parse_program();
+    let mut prog = parser.prog;
+    let result = sctp(&mut prog);
+    print_prog(&prog, Some(&result));
 }
 
 #[derive(Debug, PartialEq, Clone)]
