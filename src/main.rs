@@ -389,10 +389,14 @@ impl Program {
     }
 
     fn create_instance(&mut self, block_id: BlockId, class_id: ClassId) -> InsnId {
+        self.create_instance_with_args(block_id, class_id, Vec::<Opnd>::new())
+    }
+
+    fn create_instance_with_args(&mut self, block_id: BlockId, class_id: ClassId, args: Vec<Opnd>) -> InsnId {
         let obj = self.push_insn(block_id, Op::New { class: class_id });
         match self.classes[class_id.0].ctor {
             Some(fun_id) => {
-                self.push_insn(block_id, Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(obj), args: vec![] });
+                self.push_insn(block_id, Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(obj), args });
             }
             _ => {}
         }
@@ -494,6 +498,7 @@ pub enum Value {
     Int(i64),
     Bool(bool),
     Fun(FunId),
+    Class(ClassId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -1641,13 +1646,14 @@ struct Parser<'a> {
     fun: FunId,
     block: BlockId,
     funs: HashMap<String, FunId>,
+    classes: HashMap<String, ClassId>,
 }
 
 impl<'a> Parser<'a> {
     fn from_lexer(lexer: Lexer) -> Parser {
         let mut prog = Program::default();
         let (main_id, main_entry) = prog.new_fun();
-        Parser { input: lexer.peekable(), prog: Program::default(), class: None, self_param: None, fun: main_id, block: main_entry, funs: HashMap::default() }
+        Parser { input: lexer.peekable(), prog: Program::default(), class: None, self_param: None, fun: main_id, block: main_entry, funs: HashMap::default(), classes: HashMap::default() }
     }
 
     fn parse_program(&mut self) {
@@ -1679,6 +1685,9 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => (name.clone(), self.prog.new_fun_with_name(name)),
             token => panic!("Unexpected token {token:?}"),
         };
+        if name == "main" && self.class.is_none() {
+            self.prog.main = fun_id;
+        }
         self.funs.insert(name.clone(), fun_id);
         self.fun = fun_id;
         self.block = block_id;
@@ -1727,7 +1736,7 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => name.clone(),
             token => panic!("Unexpected token {token:?}"),
         };
-        let class_id = self.prog.new_class_with_name(name);
+        let class_id = self.prog.new_class_with_name(name.clone());
         self.class = Some(class_id);
         while let Some(token) = self.input.next() {
             match token {
@@ -1751,6 +1760,8 @@ impl<'a> Parser<'a> {
                 _ => panic!("Unexpected token {token:?}"),
             }
         }
+        assert!(!self.classes.contains_key(&name));
+        self.classes.insert(name.clone(), class_id);
         self.class = None;
     }
 
@@ -1946,10 +1957,12 @@ impl<'a> Parser<'a> {
                         if name == "true" { Opnd::Const(Value::Bool(true)) }
                         else if name == "false" { Opnd::Const(Value::Bool(false)) }
                         else if name == "nil" { Opnd::Const(Value::Nil) }
-                        else {
-                            self.funs.get(&name).and_then(|fun_id| Some(Opnd::Const(Value::Fun(*fun_id))))
-                                .unwrap_or_else(|| *env.get(&name)
-                                    .unwrap_or_else(|| panic!("Unbound name {name}")))
+                        else if self.funs.contains_key(&name) {
+                            Opnd::Const(Value::Fun(self.funs[&name]))
+                        } else if self.classes.contains_key(&name) {
+                            Opnd::Const(Value::Class(self.classes[&name]))
+                        } else {
+                            *env.get(&name).unwrap_or_else(|| panic!("Unbound name {name}"))
                         }
                     }
                 }
@@ -2008,6 +2021,9 @@ impl<'a> Parser<'a> {
                         token => panic!("Unexpected token {token:?}"),
                     };
                     if self.input.peek() != Some(&Token::LParen) {
+                        if method == "new" {
+                            panic!("Can only call method `new' on classes; got {method}");
+                        }
                         lhs = Opnd::Insn(self.prog.push_insn(self.block, Op::GetIvar { name: method, self_val: lhs }));
                         continue;
                     }
@@ -2028,6 +2044,13 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(Token::RParen);
+                    if let Opnd::Const(Value::Class(class_id)) = lhs {
+                        if method != "new" {
+                            panic!("Can only call method `new' on classes; got {method}");
+                        }
+                        lhs = Opnd::Insn(self.prog.create_instance_with_args(self.block, class_id, args));
+                        continue;
+                    };
                     lhs = Opnd::Insn(self.prog.push_insn(self.block, Op::SendDynamic { method, self_val: lhs, args }));
                 }
                 Some(_) | None => { break; }
@@ -3406,6 +3429,57 @@ end");
         assert_eq!(parser.prog.classes[4].ctor, None);
         assert_eq!(parser.prog.classes[5].name, "D");
         assert_eq!(parser.prog.classes[5].ctor, None);
+    }
+
+    #[test]
+    fn test_parse_class_new_no_args() {
+        let mut lexer = Lexer::new("
+class C
+  def initialize()
+  end
+end
+def main()
+    return C.new()
+end
+");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = &parser.prog;
+        assert_eq!(prog.classes.len(), 5);
+        assert_eq!(prog.classes[4].name, "C");
+        assert_eq!(prog.classes[4].ctor, Some(FunId(0)));
+        assert_block_equals(prog, prog.funs[1].entry_block, vec![
+            Op::New { class: ClassId(4) },
+            Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(InsnId(2)), args: vec![] },
+            Op::Return { val: Opnd::Insn(InsnId(2)) },
+        ]);
+    }
+
+    #[test]
+    fn test_parse_class_new_with_args() {
+        let mut lexer = Lexer::new("
+class C
+  def initialize(a, b)
+  end
+end
+def main()
+    return C.new(1, 2)
+end
+");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = &parser.prog;
+        assert_eq!(prog.classes.len(), 5);
+        assert_eq!(prog.classes[4].name, "C");
+        assert_eq!(prog.classes[4].ctor, Some(FunId(0)));
+        assert_block_equals(prog, prog.funs[1].entry_block, vec![
+            Op::New { class: ClassId(4) },
+            Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(InsnId(4)), args: vec![
+                Opnd::Const(Value::Int(1)),
+                Opnd::Const(Value::Int(2)),
+            ] },
+            Op::Return { val: Opnd::Insn(InsnId(4)) },
+        ]);
     }
 
     #[test]
