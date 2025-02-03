@@ -2969,6 +2969,23 @@ end");
         assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Insn(InsnId(0)) });
     }
 
+    #[test]
+    fn test_parse_function_assign_twice() {
+        let mut lexer = Lexer::new("
+def foo()
+  a = 123
+  a = 456
+  return a+1
+end");
+        let mut parser = Parser::from_lexer(lexer);
+        parser.parse_program();
+        let prog = parser.prog;
+        assert_eq!(prog.funs.len(), 1);
+        assert_eq!(prog.funs[0].name, "foo");
+        assert_eq!(prog.insns[0].op, Op::Add { v0: Opnd::Const(Value::Int(456)), v1: Opnd::Const(Value::Int(1)) });
+        assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Insn(InsnId(0)) });
+    }
+
     fn assert_block_equals(prog: &Program, block: BlockId, ops: Vec<Op>) {
         assert_eq!(prog.blocks[block.0].insns.len(), ops.len(), "Block length mismatch");
         for (idx, insn_id) in prog.blocks[block.0].insns.iter().enumerate() {
