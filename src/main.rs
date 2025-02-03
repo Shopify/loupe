@@ -1750,6 +1750,17 @@ impl<'a> Parser<'a> {
         self.class = None;
     }
 
+    fn phi(&mut self, left_block: BlockId, left_value: &Opnd, right_block: BlockId, right_value: &Opnd) -> Opnd {
+        if left_value == right_value {
+            *left_value
+        } else {
+            Opnd::Insn(self.prog.push_insn(self.block, Op::Phi { ins: vec![
+                (left_block, *left_value),
+                (right_block, *right_value),
+            ] }))
+        }
+    }
+
     fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
                  left_block: BlockId, left_env: &HashMap<String, Opnd>,
                  right_block: BlockId, right_env: &HashMap<String, Opnd>) {
@@ -1757,31 +1768,10 @@ impl<'a> Parser<'a> {
         let mut all_keys: Vec<&String> = all_keys_set.into_iter().collect();
         all_keys.sort();  // Stable Phi ordering
         for key in all_keys {
-            match (left_env.get(key), right_env.get(key)) {
-                (Some(left), Some(right)) if left == right => {}
-                (Some(left), Some(right)) => {
-                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
-                        (left_block, *left),
-                        (right_block, *right),
-                    ] });
-                    env.insert(key.clone(), Opnd::Insn(phi));
-                }
-                (Some(left), None) => {
-                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
-                        (left_block, *left),
-                        (right_block, Opnd::Const(Value::Nil)),
-                    ] });
-                    env.insert(key.clone(), Opnd::Insn(phi));
-                }
-                (None, Some(right)) => {
-                    let phi = self.prog.push_insn(self.block, Op::Phi { ins: vec![
-                        (left_block, Opnd::Const(Value::Nil)),
-                        (right_block, *right),
-                    ] });
-                    env.insert(key.clone(), Opnd::Insn(phi));
-                }
-                (None, None) => panic!("Should not happen"),
-            }
+            let left_value = left_env.get(key).unwrap_or(&Opnd::Const(Value::Nil));
+            let right_value = right_env.get(key).unwrap_or(&Opnd::Const(Value::Nil));
+            let value = self.phi(left_block, left_value, right_block, right_value);
+            env.insert(key.clone(), value);
         }
     }
 
@@ -1826,20 +1816,14 @@ impl<'a> Parser<'a> {
                     self.block = join_block;
                     self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
                     self.expect(Token::End);
-                    Opnd::Insn(self.prog.push_insn(join_block, Op::Phi { ins: vec![
-                        (then_end_block, then_result),
-                        (else_end_block, else_result),
-                    ] }))
+                    self.phi(then_end_block, &then_result, else_end_block, &else_result)
                 } else {
                     self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block: join_block });
                     self.block = join_block;
                     let if_env = env.clone();
                     self.join_vars(&mut env, before_if_block, &if_env, then_block, &then_env);
                     self.expect(Token::End);
-                    Opnd::Insn(self.prog.push_insn(join_block, Op::Phi { ins: vec![
-                        (before_if_block, Opnd::Const(Value::Nil)),
-                        (then_end_block, then_result),
-                    ] }))
+                    self.phi(before_if_block, &Opnd::Const(Value::Nil), then_end_block, &then_result)
                 }
             }
             _ => { self.parse_expression(&mut env) }
@@ -3025,8 +3009,7 @@ end");
             Op::Jump { target: BlockId(2) },
         ]);
         assert_block_equals(&prog, BlockId(2), vec![
-            Op::Phi { ins: vec![(BlockId(0), Opnd::Const(Value::Nil)), (BlockId(1), Opnd::Const(Value::Nil))] },
-            Op::Return { val: Opnd::Insn(InsnId(2)) },
+            Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
     }
 
@@ -3050,8 +3033,7 @@ end");
             Op::Jump { target: BlockId(2) },
         ]);
         assert_block_equals(&prog, BlockId(2), vec![
-            Op::Phi { ins: vec![(BlockId(1), Opnd::Const(Value::Nil)), (BlockId(3), Opnd::Const(Value::Nil))] },
-            Op::Return { val: Opnd::Insn(InsnId(3)) },
+            Op::Return { val: Opnd::Const(Value::Nil) },
         ]);
         assert_block_equals(&prog, BlockId(3), vec![
             Op::Jump { target: BlockId(2) },
