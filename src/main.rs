@@ -1710,11 +1710,12 @@ impl<'a> Parser<'a> {
             let insn_id = self.prog.push_insn(block_id, Op::Param { idx });
             env.insert(param, Opnd::Insn(insn_id));
         }
+        let mut result = Opnd::Const(Value::Nil);
         while self.input.peek() != Some(&Token::End) {
-            self.parse_statement(&mut env);
+            result = self.parse_statement(&mut env);
         }
         if !self.prog.block_is_terminated(self.block) {
-            self.prog.push_insn(self.block, Op::Return { val: Opnd::Const(Value::Nil) });
+            self.prog.push_insn(self.block, Op::Return { val: result });
         }
         self.expect(Token::End);
         self.self_param = None;
@@ -1784,26 +1785,28 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_block(&mut self, mut env: &mut HashMap<String, Opnd>, and_then: BlockId) {
+    fn parse_block(&mut self, mut env: &mut HashMap<String, Opnd>, and_then: BlockId) -> (BlockId, Opnd) {
+        let mut result = Opnd::Const(Value::Nil);
         loop {
             match self.input.peek() {
                 Some(Token::End) | Some(Token::Else) => {
                     if !self.prog.block_is_terminated(self.block) {
                         self.prog.push_insn(self.block, Op::Jump { target: and_then });
                     }
-                    return;
+                    return (self.block, result);
                 }
-                _ => { self.parse_statement(&mut env); }
+                _ => { result = self.parse_statement(&mut env); }
             }
         }
     }
 
-    fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) {
+    fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
         match self.input.peek() {
             Some(Token::Return) => {
                 self.input.next();
                 let val = self.parse_expression(&mut env);
                 self.prog.push_insn(self.block, Op::Return { val });
+                Opnd::Const(Value::Nil)  // TODO(max): Empty?
             }
             Some(Token::If) => {
                 self.input.next();
@@ -1813,24 +1816,33 @@ impl<'a> Parser<'a> {
                 let join_block = self.prog.new_block(self.fun);
                 self.block = then_block;
                 let mut then_env = env.clone();
-                self.parse_block(&mut then_env, join_block);
+                let (then_end_block, then_result) = self.parse_block(&mut then_env, join_block);
                 if self.match_token(Token::Else) {
                     let else_block = self.prog.new_block(self.fun);
                     self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block });
                     let mut else_env = env.clone();
                     self.block = else_block;
-                    self.parse_block(&mut else_env, join_block);
+                    let (else_end_block, else_result) = self.parse_block(&mut else_env, join_block);
                     self.block = join_block;
                     self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
+                    self.expect(Token::End);
+                    Opnd::Insn(self.prog.push_insn(join_block, Op::Phi { ins: vec![
+                        (then_end_block, then_result),
+                        (else_end_block, else_result),
+                    ] }))
                 } else {
                     self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block: join_block });
                     self.block = join_block;
                     let if_env = env.clone();
                     self.join_vars(&mut env, before_if_block, &if_env, then_block, &then_env);
+                    self.expect(Token::End);
+                    Opnd::Insn(self.prog.push_insn(join_block, Op::Phi { ins: vec![
+                        (before_if_block, Opnd::Const(Value::Nil)),
+                        (then_end_block, then_result),
+                    ] }))
                 }
-                self.expect(Token::End);
             }
-            _ => { self.parse_expression(&mut env); }
+            _ => { self.parse_expression(&mut env) }
         }
     }
 
@@ -2867,7 +2879,7 @@ def bar(c, d) end
         assert_eq!(prog.funs.len(), 1);
         assert_eq!(prog.funs[0].name, "add");
         assert_eq!(prog.insns[0].op, Op::Add { v0: Opnd::Const(Value::Int(1)), v1: Opnd::Const(Value::Int(2)) });
-        assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Const(Value::Nil) });
+        assert_eq!(prog.insns[1].op, Op::Return { val: Opnd::Insn(InsnId(0)) });
     }
 
     #[test]
@@ -2881,7 +2893,7 @@ def bar(c, d) end
         assert_eq!(prog.insns[0].op, Op::Param { idx: 0 });
         assert_eq!(prog.insns[1].op, Op::Param { idx: 1 });
         assert_eq!(prog.insns[2].op, Op::Add { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
-        assert_eq!(prog.insns[3].op, Op::Return { val: Opnd::Const(Value::Nil) });
+        assert_eq!(prog.insns[3].op, Op::Return { val: Opnd::Insn(InsnId(2)) });
     }
 
     #[test]
@@ -2897,7 +2909,7 @@ def bar(c, d) end
         assert_eq!(prog.insns[2].op, Op::Param { idx: 2 });
         assert_eq!(prog.insns[3].op, Op::Mul { v0: Opnd::Insn(InsnId(1)), v1: Opnd::Insn(InsnId(2)) });
         assert_eq!(prog.insns[4].op, Op::Add { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(3)) });
-        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
+        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Insn(InsnId(4)) });
     }
 
     #[test]
@@ -2913,7 +2925,7 @@ def bar(c, d) end
         assert_eq!(prog.insns[2].op, Op::Param { idx: 2 });
         assert_eq!(prog.insns[3].op, Op::Mul { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(1)) });
         assert_eq!(prog.insns[4].op, Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(2)) });
-        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Const(Value::Nil) });
+        assert_eq!(prog.insns[5].op, Op::Return { val: Opnd::Insn(InsnId(4)) });
     }
 
     #[test]
@@ -2928,15 +2940,14 @@ def bar(c, d) end
     }
 
     #[test]
-    fn test_parse_function_implicit_return_nil() {
-        // TODO(max): Maybe consider making blocks return value of last expression
+    fn test_parse_function_implicit_return_last_value() {
         let mut lexer = Lexer::new("def foo() 1 end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
         assert_eq!(prog.funs.len(), 1);
         assert_eq!(prog.funs[0].name, "foo");
-        assert_eq!(prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Nil) });
+        assert_eq!(prog.insns[0].op, Op::Return { val: Opnd::Const(Value::Int(1)) });
     }
 
     #[test]
@@ -3014,7 +3025,8 @@ end");
             Op::Jump { target: BlockId(2) },
         ]);
         assert_block_equals(&prog, BlockId(2), vec![
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Phi { ins: vec![(BlockId(0), Opnd::Const(Value::Nil)), (BlockId(1), Opnd::Const(Value::Nil))] },
+            Op::Return { val: Opnd::Insn(InsnId(2)) },
         ]);
     }
 
@@ -3038,7 +3050,8 @@ end");
             Op::Jump { target: BlockId(2) },
         ]);
         assert_block_equals(&prog, BlockId(2), vec![
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Phi { ins: vec![(BlockId(1), Opnd::Const(Value::Nil)), (BlockId(3), Opnd::Const(Value::Nil))] },
+            Op::Return { val: Opnd::Insn(InsnId(3)) },
         ]);
         assert_block_equals(&prog, BlockId(3), vec![
             Op::Jump { target: BlockId(2) },
@@ -3103,13 +3116,17 @@ end");
                 (BlockId(1), Opnd::Const(Value::Nil)),
                 (BlockId(3), Opnd::Const(Value::Int(12))),
             ] },
+            Op::Phi { ins: vec![
+                (BlockId(1), Opnd::Const(Value::Int(11))),
+                (BlockId(3), Opnd::Const(Value::Int(12))),
+            ] },
             Op::Add { v0: Opnd::Insn(InsnId(7)), v1: Opnd::Insn(InsnId(8)) },
-            Op::Add { v0: Opnd::Const(Value::Int(10)), v1: Opnd::Insn(InsnId(9)) },
-            Op::Add { v0: Opnd::Insn(InsnId(6)), v1: Opnd::Insn(InsnId(10)) },
-            Op::Add { v0: Opnd::Insn(InsnId(5)), v1: Opnd::Insn(InsnId(11)) },
-            Op::Add { v0: Opnd::Insn(InsnId(4)), v1: Opnd::Insn(InsnId(12)) },
-            Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(13)) },
-            Op::Return { val: Opnd::Insn(InsnId(14)) },
+            Op::Add { v0: Opnd::Const(Value::Int(10)), v1: Opnd::Insn(InsnId(10)) },
+            Op::Add { v0: Opnd::Insn(InsnId(6)), v1: Opnd::Insn(InsnId(11)) },
+            Op::Add { v0: Opnd::Insn(InsnId(5)), v1: Opnd::Insn(InsnId(12)) },
+            Op::Add { v0: Opnd::Insn(InsnId(4)), v1: Opnd::Insn(InsnId(13)) },
+            Op::Add { v0: Opnd::Insn(InsnId(3)), v1: Opnd::Insn(InsnId(14)) },
+            Op::Return { val: Opnd::Insn(InsnId(15)) },
         ]);
     }
 
@@ -3132,7 +3149,7 @@ end");
         ]);
         assert_block_equals(&prog, prog.funs[1].entry_block, vec![
             Op::SendStatic { target: FunId(0), args: vec![] },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3155,7 +3172,7 @@ end");
         ]);
         assert_block_equals(&prog, prog.funs[1].entry_block, vec![
             Op::SendStatic { target: FunId(0), args: vec![Opnd::Const(Value::Int(1))] },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3182,7 +3199,7 @@ end");
                 Opnd::Const(Value::Int(2)),
                 Opnd::Const(Value::Int(3))
             ] },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3200,7 +3217,7 @@ end");
         assert_block_equals(&prog, prog.funs[0].entry_block, vec![
             Op::Param { idx: 0 },
             Op::SendDynamic { method: "bar".into(), self_val: Opnd::Insn(InsnId(0)), args: vec![] },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3222,7 +3239,7 @@ end");
                 Opnd::Const(Value::Int(2)),
                 Opnd::Const(Value::Int(3))
             ] },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3240,7 +3257,7 @@ end");
         assert_block_equals(&prog, prog.funs[0].entry_block, vec![
             Op::Param { idx: 0 },
             Op::GetIvar { name: "bar".into(), self_val: Opnd::Insn(InsnId(0)) },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3360,7 +3377,7 @@ end");
         assert_block_equals(prog, prog.funs[0].entry_block, vec![
             Op::SelfParam { class_id: ClassId(4) },
             Op::SetIvar { self_val: Opnd::Insn(InsnId(0)), name: "a".into(), val: Opnd::Const(Value::Int(1)) },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3383,7 +3400,7 @@ end");
         assert_block_equals(prog, prog.funs[0].entry_block, vec![
             Op::SelfParam { class_id: ClassId(4) },
             Op::GetIvar { self_val: Opnd::Insn(InsnId(0)), name: "a".into() },
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Return { val: Opnd::Insn(InsnId(1)) },
         ]);
     }
 
@@ -3459,9 +3476,9 @@ end
         let mut lexer = Lexer::new("
 def factorial(n)
   if n < 2
-    return 1
+    1
   else
-    return n * factorial(n-1)
+    n * factorial(n-1)
   end
 end
 ");
@@ -3475,16 +3492,17 @@ end
             Op::IfTrue { val: Opnd::Insn(InsnId(1)), then_block: BlockId(1), else_block: BlockId(3) },
         ]);
         assert_block_equals(prog, BlockId(1), vec![
-            Op::Return { val: Opnd::Const(Value::Int(1)) },
+            Op::Jump { target: BlockId(2) }
         ]);
         assert_block_equals(prog, BlockId(3), vec![
             Op::Sub { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Const(Value::Int(1)) },
             Op::SendStatic { target: FunId(0), args: vec![Opnd::Insn(InsnId(4))] },
             Op::Mul { v0: Opnd::Insn(InsnId(0)), v1: Opnd::Insn(InsnId(5)) },
-            Op::Return { val: Opnd::Insn(InsnId(6)) },
+            Op::Jump { target: BlockId(2) }
         ]);
         assert_block_equals(prog, BlockId(2), vec![
-            Op::Return { val: Opnd::Const(Value::Nil) },
+            Op::Phi { ins: vec![(BlockId(1), Opnd::Const(Value::Int(1))), (BlockId(3), Opnd::Insn(InsnId(6)))] },
+            Op::Return { val: Opnd::Insn(InsnId(8)) }
         ]);
     }
 }
