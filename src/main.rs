@@ -634,6 +634,7 @@ fn sctp(prog: &Program) -> AnalysisResult
     for (class_id, class) in prog.classes.iter().enumerate() {
         let init = ivar_initialized[class_id];
         for (ivar_idx, ivar) in class.ivars.iter().enumerate() {
+            assert!(ivar_idx < 64, "TODO: support more ivars, either by giving up or bigger bitset");
             ivar_types[class_id].insert(ivar.clone(), if init.get(ivar_idx) { Type::Empty } else { Type::Const(Value::Nil) });
         }
     }
