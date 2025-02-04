@@ -1384,10 +1384,10 @@ fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
                     match result {
                         Some(ref result) if !insn.op.is_terminator() => {
                             let ty = result.type_of(*insn_id);
-                            println!("    {insn_id}:{ty:?} = {insn:?}");
+                            println!("    {insn_id}:{ty:?} = {:?}", insn.op);
                         }
                         _ => {
-                            println!("    {insn_id}: {insn:?}");
+                            println!("    {insn_id}: {:?}", insn.op);
                         }
                     }
                 }
