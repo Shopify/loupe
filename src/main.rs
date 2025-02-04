@@ -1387,7 +1387,7 @@ fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
                             println!("    {insn_id}:{ty:?} = {:?}", insn.op);
                         }
                         _ => {
-                            println!("    {insn_id}: {:?}", insn.op);
+                            println!("    {insn_id} = {:?}", insn.op);
                         }
                     }
                 }
