@@ -9,6 +9,8 @@ use bit_set::BitSet;
 mod fx;
 use fx::FxHashMap as HashMap;
 use fx::FxHashSet as HashSet;
+mod nohash;
+use nohash::{IntMap, IntSet};
 
 fn new_hash_map<K, V>() -> HashMap<K, V> {
     HashMap::<K, V>::default()
@@ -17,6 +19,46 @@ fn new_hash_map<K, V>() -> HashMap<K, V> {
 fn new_hash_set<E>() -> HashSet<E> {
     HashSet::<E>::default()
 }
+
+fn new_int_map<K, V>() -> IntMap<K, V> {
+    IntMap::<K, V>::default()
+}
+
+fn new_int_set<E>() -> IntSet<E> {
+    IntSet::<E>::default()
+}
+
+impl std::hash::Hash for ClassId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.0)
+    }
+}
+
+impl nohash::IsEnabled for ClassId {}
+
+impl std::hash::Hash for BlockId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.0)
+    }
+}
+
+impl nohash::IsEnabled for BlockId {}
+
+impl std::hash::Hash for FunId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.0)
+    }
+}
+
+impl nohash::IsEnabled for FunId {}
+
+impl std::hash::Hash for InsnId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.0)
+    }
+}
+
+impl nohash::IsEnabled for InsnId {}
 
 // TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
 // around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
@@ -151,14 +193,14 @@ impl std::fmt::Display for ClassId {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, PartialOrd, Ord)]
 pub struct ClassId(usize);
 // TODO(max): Remove derive(Default) for FunId
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct FunId(usize);
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct BlockId(usize);
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct InsnId(usize);
 
 impl std::fmt::Display for InsnId {
@@ -440,7 +482,7 @@ impl Program {
 
     fn rpo_from(&self, block: BlockId) -> Vec<BlockId> {
         let mut result = vec![];
-        let mut visited = new_hash_set();
+        let mut visited = new_int_set();
         self.po_traverse_from(block, &mut result, &mut visited);
         result.reverse();
         result
@@ -450,7 +492,7 @@ impl Program {
         &self,
         block: BlockId,
         result: &mut Vec<BlockId>,
-        visited: &mut HashSet<BlockId>,
+        visited: &mut IntSet<BlockId>,
     ) {
         visited.insert(block);
         match &self.insns[self.blocks[block.0].insns.last().unwrap().0].op {
@@ -600,7 +642,7 @@ struct AnalysisResult {
     itr_count: usize,
 
     // Map of insn -> set of instructions that call the function containing insns
-    called_by: Vec<HashSet<InsnId>>,
+    called_by: Vec<IntSet<InsnId>>,
 }
 
 impl AnalysisResult {
@@ -628,8 +670,8 @@ fn sctp(prog: &Program) -> AnalysisResult
 
     // Map of functions to instructions that called them
     let num_funs = prog.funs.len();
-    let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
-    called_by.resize(num_funs, new_hash_set());
+    let mut called_by: Vec<IntSet<InsnId>> = Vec::with_capacity(num_funs);
+    called_by.resize(num_funs, new_int_set());
 
     // Map of InsnId -> operands that flow to that insn
     // Flow goes from send arguments to function parameters and from return values to send results
@@ -664,7 +706,7 @@ fn sctp(prog: &Program) -> AnalysisResult
         }
     }
 
-    let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = new_hash_map();
+    let mut getivars: HashMap<(ClassId, &String), IntSet<InsnId>> = new_hash_map();
 
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         match insn {
@@ -785,7 +827,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     let result = match type_of(self_val) {
                         Type::Object(classes) => {
                             for class_id in classes.iter() {
-                                getivars.entry((ClassId(class_id), name)).or_insert(new_hash_set()).insert(insn_id);
+                                getivars.entry((ClassId(class_id), name)).or_insert(new_int_set()).insert(insn_id);
                             }
                             classes.iter().fold(Type::Empty, |acc, class_id| union(&acc, &ivar_types[class_id][name]))
                         }
@@ -950,8 +992,8 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
     let num_insns = prog.insns.len();
-    let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
-    uses.resize(num_insns, new_hash_set());
+    let mut uses: Vec<IntSet<InsnId>> = Vec::with_capacity(num_insns);
+    uses.resize(num_insns, new_int_set());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let insn_id = InsnId(insn_id);
         let mut mark_use = |opnd: &Opnd| {
@@ -1054,11 +1096,11 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
         None => panic!("can't analyze ctor without SelfParam"),
     };
     let blocks = prog.rpo(ctor);
-    let mut preds: HashMap<BlockId, HashSet<BlockId>> = new_hash_map();
+    let mut preds: IntMap<BlockId, IntSet<BlockId>> = new_int_map();
     for block in &blocks {
-        preds.insert(*block, new_hash_set());
+        preds.insert(*block, new_int_set());
     }
-    let mut block_out: HashMap<BlockId, SmallBitSet> = new_hash_map();
+    let mut block_out: IntMap<BlockId, SmallBitSet> = new_int_map();
     for block in &blocks {
         block_out.insert(*block, SmallBitSet(0));
     }
@@ -1291,7 +1333,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         let callees = random_dag(&mut rng, dag_size, 1, 10);
 
         // Map of DAG node indices to function ids
-        let mut fun_map = new_hash_map();
+        let mut fun_map = new_int_map();
 
         // For each DAG node, going from leafs to root
         for (dag_idx, callees) in callees.into_iter().enumerate().rev() {
@@ -1351,9 +1393,9 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         // println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
-        let mut objs = new_hash_set();
+        let mut objs = new_int_set();
         while objs.len() < num_classes {
-            objs.insert(rng.choice(&objects));
+            objs.insert(*rng.choice(&objects));
         }
 
         // Call the new root function with each class instance
@@ -1361,7 +1403,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         for obj in objs {
             let obj = prog.push_insn(
                 main_entry,
-                Op::SendStatic { target: *root_fun_id, args: vec![Opnd::Insn(*obj)] }
+                Op::SendStatic { target: *root_fun_id, args: vec![Opnd::Insn(obj)] }
             );
         }
     }
