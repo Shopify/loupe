@@ -3,9 +3,20 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 use std::cmp::{min, max};
 use bit_set::BitSet;
+mod fx;
+use fx::FxHashMap as HashMap;
+use fx::FxHashSet as HashSet;
+
+fn new_hash_map<K, V>() -> HashMap<K, V> {
+    HashMap::<K, V>::default()
+}
+
+fn new_hash_set<E>() -> HashSet<E> {
+    HashSet::<E>::default()
+}
 
 // TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
 // around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
@@ -308,7 +319,7 @@ impl Program {
         self.classes.push(Class {
             name,
             ivars: Default::default(),
-            methods: HashMap::from([ ("initialize".into(), ctor.0) ]),
+            methods: HashMap::from_iter([ ("initialize".into(), ctor.0) ]),
             ctor: Some(ctor.0)
         });
         (ClassId(id), ctor)
@@ -429,7 +440,7 @@ impl Program {
 
     fn rpo_from(&self, block: BlockId) -> Vec<BlockId> {
         let mut result = vec![];
-        let mut visited = HashSet::new();
+        let mut visited = new_hash_set();
         self.po_traverse_from(block, &mut result, &mut visited);
         result.reverse();
         result
@@ -618,12 +629,12 @@ fn sctp(prog: &Program) -> AnalysisResult
     // Map of functions to instructions that called them
     let num_funs = prog.funs.len();
     let mut called_by: Vec<HashSet<InsnId>> = Vec::with_capacity(num_funs);
-    called_by.resize(num_funs, HashSet::new());
+    called_by.resize(num_funs, new_hash_set());
 
     // Map of InsnId -> operands that flow to that insn
     // Flow goes from send arguments to function parameters and from return values to send results
     let mut flows_to: Vec<HashSet<Opnd>> = Vec::with_capacity(num_insns);
-    flows_to.resize(num_insns, HashSet::new());
+    flows_to.resize(num_insns, new_hash_set());
 
     // Mark entry as executable
     let entry = prog.entry_of(prog.main);
@@ -644,7 +655,7 @@ fn sctp(prog: &Program) -> AnalysisResult
     // Map of ClassId->ivar types. Used jointly with ivar initialization bitsets.
     let num_classes = prog.classes.len();
     let mut ivar_types: Vec<HashMap<String, Type>> = Vec::with_capacity(num_classes);
-    ivar_types.resize(num_classes, HashMap::new());
+    ivar_types.resize(num_classes, new_hash_map());
     for (class_id, class) in prog.classes.iter().enumerate() {
         let init = ivar_initialized[class_id];
         for (ivar_idx, ivar) in class.ivars.iter().enumerate() {
@@ -653,7 +664,7 @@ fn sctp(prog: &Program) -> AnalysisResult
         }
     }
 
-    let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = HashMap::new();
+    let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = new_hash_map();
 
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         match insn {
@@ -774,7 +785,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     let result = match type_of(self_val) {
                         Type::Object(classes) => {
                             for class_id in classes.iter() {
-                                getivars.entry((ClassId(class_id), name)).or_insert(HashSet::new()).insert(insn_id);
+                                getivars.entry((ClassId(class_id), name)).or_insert(new_hash_set()).insert(insn_id);
                             }
                             classes.iter().fold(Type::Empty, |acc, class_id| union(&acc, &ivar_types[class_id][name]))
                         }
@@ -940,7 +951,7 @@ fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
     // uses[A] = { B, C } means that B and C both use A in their operands
     let num_insns = prog.insns.len();
     let mut uses: Vec<HashSet<InsnId>> = Vec::with_capacity(num_insns);
-    uses.resize(num_insns, HashSet::new());
+    uses.resize(num_insns, new_hash_set());
     for (insn_id, insn) in prog.insns.iter().enumerate() {
         let insn_id = InsnId(insn_id);
         let mut mark_use = |opnd: &Opnd| {
@@ -1043,11 +1054,11 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
         None => panic!("can't analyze ctor without SelfParam"),
     };
     let blocks = prog.rpo(ctor);
-    let mut preds: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+    let mut preds: HashMap<BlockId, HashSet<BlockId>> = new_hash_map();
     for block in &blocks {
-        preds.insert(*block, HashSet::new());
+        preds.insert(*block, new_hash_set());
     }
-    let mut block_out: HashMap<BlockId, SmallBitSet> = HashMap::new();
+    let mut block_out: HashMap<BlockId, SmallBitSet> = new_hash_map();
     for block in &blocks {
         block_out.insert(*block, SmallBitSet(0));
     }
@@ -1280,7 +1291,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         let callees = random_dag(&mut rng, dag_size, 1, 10);
 
         // Map of DAG node indices to function ids
-        let mut fun_map = HashMap::new();
+        let mut fun_map = new_hash_map();
 
         // For each DAG node, going from leafs to root
         for (dag_idx, callees) in callees.into_iter().enumerate().rev() {
@@ -1340,7 +1351,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         // println!("num_classes: {}", num_classes);
 
         // Randomly select class instances
-        let mut objs = HashSet::new();
+        let mut objs = new_hash_set();
         while objs.len() < num_classes {
             objs.insert(rng.choice(&objects));
         }
@@ -1702,7 +1713,7 @@ impl<'a> Parser<'a> {
             if !self.match_token(Token::Comma) { break; }
         }
         self.expect(Token::RParen);
-        let mut env: HashMap<String, Opnd> = HashMap::new();
+        let mut env: HashMap<String, Opnd> = new_hash_map();
         if let Some(class_id) = self.class {
             self.self_param = Some(self.prog.push_insn(block_id, Op::SelfParam { class_id }));
         }
