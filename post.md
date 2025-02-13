@@ -108,3 +108,45 @@ it's not possible to redefine the meaning of integer addition (remember, we're
 looking at a Ruby-like language with different semantics but similar syntax).
 In that case, it is absolutely possible to fold those constants. So `c` has
 type `Integer[3]`.
+
+Let's complicate things.
+
+```ruby
+if true
+  a = 3
+else
+  a = 4
+end
+```
+
+We said that each variable would only be assigned once, but SSA can represent
+such a program using phi nodes. Phi nodes are special pseudo-instructions that
+track dataflow when it could come from multiple places. In this case, SSA would
+place one after the `if` to merge two differently named variables into a third
+one.
+
+```ruby
+if true
+  a0 = 3
+else
+  a1 = 4
+end
+a2 = phi(a0, a1)
+```
+
+For our analysis, the phi node does not do anything other than compute the type
+union of its inputs. We do this because we are treating a type as a set of all
+possible values that it could represent. For example `Integer[3]` is the set
+`{3}`. And `Integer` is the infinite and difficult to fit into memory set
+`{..., -2, -1, 0, 1, 2, ...}`.
+
+```ruby
+def decisions(condition)
+  if condition
+    a = 3
+  else
+    a = 4
+  end
+  a
+end
+```
