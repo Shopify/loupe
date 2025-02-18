@@ -3041,7 +3041,7 @@ end");
     #[test]
     fn test_if_phi() {
         // a is defined before and modified in both branches
-        // b is defiend before and modified only in then
+        // b is defined before and modified only in then
         // c is defined before and modified only ine lse
         // d is defined in then and in else
         // e is defined before and not modified
