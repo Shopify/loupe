@@ -142,8 +142,7 @@ impl std::fmt::Display for ClassId {
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, PartialOrd, Ord)]
 pub struct ClassId(usize);
-// TODO(max): Remove derive(Default) for FunId
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct FunId(usize);
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BlockId(usize);
@@ -168,7 +167,6 @@ impl std::fmt::Display for FunId {
     }
 }
 
-// Type: Int, Nil, Class
 #[derive(Debug, Clone, PartialEq)]
 enum Type
 {
