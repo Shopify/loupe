@@ -650,7 +650,7 @@ fn sctp(prog: &Program) -> AnalysisResult
 
     let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = HashMap::new();
 
-    for (_insn_id, insn) in prog.insns.iter().enumerate() {
+    for insn in prog.insns.iter() {
         match insn {
             Insn { block_id, op: Op::Return { val } } => {
                 let parent_fun = prog.blocks[block_id.0].fun_id;
