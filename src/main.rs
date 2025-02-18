@@ -1,9 +1,7 @@
-#![allow(unused_imports)]
 #![allow(dead_code)]
-#![allow(unused_variables)]
 
-use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
-use std::cmp::{min, max};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::min;
 use bit_set::BitSet;
 
 // TODO(max): Figure out how to do a no-hash HashSet/HashMap for the various Id types floating
@@ -220,11 +218,11 @@ fn union(left: &Type, right: &Type) -> Type {
         (Type::Empty, x) | (x, Type::Empty) => x.clone(),
         (Type::Const(Value::Nil), Type::Const(Value::Nil)) => left.clone(),
         (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) if l == r => left.clone(),
-        (Type::Const(Value::Int(l)), Type::Const(Value::Int(r))) => Type::Int,
+        (Type::Const(Value::Int(_l)), Type::Const(Value::Int(_r))) => Type::Int,
         (Type::Const(Value::Int(_)), Type::Int) | (Type::Int, Type::Const(Value::Int(_))) => Type::Int,
         (Type::Int, Type::Int) => Type::Int,
         (Type::Const(Value::Bool(l)), Type::Const(Value::Bool(r))) if l == r => left.clone(),
-        (Type::Const(Value::Bool(l)), Type::Const(Value::Bool(r))) => Type::Bool,
+        (Type::Const(Value::Bool(_l)), Type::Const(Value::Bool(_r))) => Type::Bool,
         (Type::Const(Value::Bool(_)), Type::Bool) | (Type::Bool, Type::Const(Value::Bool(_))) => Type::Bool,
         (Type::Bool, Type::Bool) => Type::Bool,
         (Type::Object(l), Type::Object(r)) => {
@@ -392,7 +390,7 @@ impl Program {
     fn create_instance_with_args(&mut self, block_id: BlockId, class_id: ClassId, args: Vec<Opnd>) -> InsnId {
         let obj = self.push_insn(block_id, Op::New { class: class_id });
         match self.classes[class_id.0].ctor {
-            Some(fun_id) => {
+            Some(_fun_id) => {
                 self.push_insn(block_id, Op::SendDynamic { method: "initialize".into(), self_val: Opnd::Insn(obj), args });
             }
             _ => {}
@@ -652,7 +650,7 @@ fn sctp(prog: &Program) -> AnalysisResult
 
     let mut getivars: HashMap<(ClassId, &String), HashSet<InsnId>> = HashMap::new();
 
-    for (insn_id, insn) in prog.insns.iter().enumerate() {
+    for (_insn_id, insn) in prog.insns.iter().enumerate() {
         match insn {
             Insn { block_id, op: Op::Return { val } } => {
                 let parent_fun = prog.blocks[block_id.0].fun_id;
@@ -764,7 +762,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     // Only take into account operands coming from from reachable blocks
                     ins.iter().fold(Type::Empty, |acc, (block_id, opnd)| if executable[block_id.0] { union(&acc, &type_of(opnd)) } else { acc })
                 }
-                Op::Param { idx } => {
+                Op::Param { idx: _ } => {
                     flows_to[insn_id.0].iter().fold(Type::Empty, |acc, opnd| union(&acc, &type_of(opnd)))
                 }
                 Op::GetIvar { self_val, name } => {
@@ -855,7 +853,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                                     _ => panic!("Invalid send of {method} to {class_id:?}"),
                                 }
                             });
-                            for (class_id, target) in targets {
+                            for (_class_id, target) in targets {
                                 let target_entry_id = prog.entry_of(target);
                                 if called_by[target.0].insert(insn_id) {
                                     // Newly inserted; enqueue target and update flow relation
@@ -1063,7 +1061,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
                     Op::Jump { target } => {
                         preds.get_mut(target).unwrap().insert(*block);
                     }
-                    Op::SetIvar { name, self_val, val } if *self_val == Opnd::Insn(*self_param) => {
+                    Op::SetIvar { name, self_val, val: _ } if *self_val == Opnd::Insn(*self_param) => {
                         let idx = match class.ivars.iter().position(|ivar| *ivar == *name) {
                             // TODO(max): Check if index is too big to represent in SmallBitSet
                             Some(idx) => idx,
@@ -1111,7 +1109,7 @@ fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: 
         let num_parents = rng.rand_usize(min_parents, min(max_parents, node_idx));
 
         // For each parent
-        for i in 0..num_parents {
+        for _i in 0..num_parents {
             // Select a random previous node as the parent
             let p_idx = rng.rand_usize(0, node_idx - 1);
             callees[p_idx].push(node_idx);
@@ -1212,7 +1210,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
     // Generate a large number of classes
     let mut classes = Vec::new();
     for class_idx in 0..num_classes {
-        let (class_id, (ctor_id, ctor_entry)) = prog.new_class_with_ctor(format!("class_{class_idx}"));
+        let (class_id, (_ctor_id, ctor_entry)) = prog.new_class_with_ctor(format!("class_{class_idx}"));
         classes.push(class_id);
 
         // Set up a constructor for this class
@@ -1238,7 +1236,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
 
         // Create methods for this class
         for j in 0..METHODS_PER_CLASS {
-            let (m_id, entry_block) = prog.new_method(class_id, format!("m{}", j));
+            let (_m_id, entry_block) = prog.new_method(class_id, format!("m{}", j));
 
             // TODO: implement increment op with setivar as well?
             // 25% of the time
@@ -1345,7 +1343,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
         // Call the new root function with each class instance
         let root_fun_id = fun_map.get(&0).unwrap();
         for obj in objs {
-            let obj = prog.push_insn(
+            let _obj = prog.push_insn(
                 main_entry,
                 Op::SendStatic { target: *root_fun_id, args: vec![Opnd::Insn(*obj)] }
             );
@@ -1368,7 +1366,7 @@ fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
         println!("end");
     }
     println!("Entry: {}", prog.main);
-    for (fun_id, fun) in prog.funs.iter().enumerate() {
+    for (fun_id, _fun) in prog.funs.iter().enumerate() {
         let fun_id = FunId(fun_id);
         println!("fun {fun_id}:");
         for (block_id, block) in prog.blocks.iter().enumerate() {
@@ -1665,7 +1663,7 @@ impl<'a> Parser<'a> {
     fn match_token(&mut self, expected: Token) -> bool {
         match self.input.peek() {
             Some(actual) if *actual == expected => { self.input.next(); true },
-            actual => false,
+            _actual => false,
         }
     }
 
@@ -1772,7 +1770,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_block(&mut self, mut env: &mut HashMap<String, Opnd>, and_then: BlockId) -> (BlockId, Opnd) {
+    fn parse_block(&mut self, env: &mut HashMap<String, Opnd>, and_then: BlockId) -> (BlockId, Opnd) {
         let mut result = Opnd::Const(Value::Nil);
         loop {
             match self.input.peek() {
@@ -1787,7 +1785,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_statement(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
+    fn parse_statement(&mut self, env: &mut HashMap<String, Opnd>) -> Opnd {
         match self.input.peek() {
             Some(Token::Return) => {
                 self.input.next();
@@ -1827,7 +1825,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
+    fn parse_expression(&mut self, env: &mut HashMap<String, Opnd>) -> Opnd {
         self.parse_(env, 0)
     }
 
@@ -1862,7 +1860,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_(&mut self, mut env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
+    fn parse_(&mut self, env: &mut HashMap<String, Opnd>, prec: i8) -> Opnd {
         let mut lhs = match self.input.peek() {
             None => panic!("Unexpected EOF"),
             Some(Token::Int(lit)) => {
