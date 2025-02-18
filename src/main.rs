@@ -1530,8 +1530,8 @@ end
     let lexer = Lexer::new(sample_program);
     let mut parser = Parser::from_lexer(lexer);
     parser.parse_program();
-    let mut prog = parser.prog;
-    let result = sctp(&mut prog);
+    let prog = parser.prog;
+    let result = sctp(&prog);
     print_prog(&prog, Some(&result));
 }
 
@@ -2067,7 +2067,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let ret_id = prog.push_insn(block_id, Op::Return { val: Opnd::Insn(add_id) });
-        let insn_uses = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&prog);
         assert_eq!(insn_uses[add_id.0], vec![ret_id]);
         assert_eq!(insn_uses[ret_id.0], vec![]);
     }
@@ -2077,7 +2077,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Insn(add0_id), v1: Opnd::Insn(add0_id) });
-        let insn_uses = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&prog);
         assert_eq!(insn_uses[add0_id.0], vec![add1_id]);
         assert_eq!(insn_uses[add1_id.0], vec![]);
     }
@@ -2087,7 +2087,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id))] });
-        let insn_uses = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&prog);
         assert_eq!(insn_uses[add_id.0], vec![phi_id]);
         assert_eq!(insn_uses[phi_id.0], vec![]);
     }
@@ -2098,7 +2098,7 @@ mod compute_uses_tests {
         let (target, target_entry) = prog.new_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Insn(add_id)] });
-        let insn_uses = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&prog);
         assert_eq!(insn_uses[add_id.0], vec![send_id]);
         assert_eq!(insn_uses[send_id.0], vec![]);
     }
@@ -2108,7 +2108,7 @@ mod compute_uses_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(add_id), then_block: BlockId(3), else_block: BlockId(4) });
-        let insn_uses = compute_uses(&mut prog);
+        let insn_uses = compute_uses(&prog);
         assert_eq!(insn_uses[add_id.0], vec![iftrue_id]);
         assert_eq!(insn_uses[iftrue_id.0], vec![]);
     }
@@ -2129,7 +2129,7 @@ mod sctp_tests {
     fn test_add_const() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(add_id), Type::Const(Value::Int(7)));
     }
 
@@ -2138,7 +2138,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add0_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let add1_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Insn(add0_id), v1: Opnd::Const(Value::Int(5)) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(add1_id), Type::Const(Value::Int(12)));
     }
 
@@ -2146,7 +2146,7 @@ mod sctp_tests {
     fn test_isnil_non_nil_const() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Const(Value::Int(3)) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(isnil_id), Type::Const(Value::Bool(false)));
     }
 
@@ -2154,7 +2154,7 @@ mod sctp_tests {
     fn test_isnil_nil() {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let isnil_id = prog.push_insn(block_id, Op::IsNil { v: NIL });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(isnil_id), Type::Const(Value::Bool(true)));
     }
 
@@ -2163,7 +2163,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Int(3))), (block_id, Opnd::Const(Value::Int(4)))] });
         let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Insn(phi_id) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::Int);
         assert_eq!(result.type_of(isnil_id), Type::Const(Value::Bool(false)));
     }
@@ -2173,7 +2173,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Const(Value::Bool(true))), (block_id, Opnd::Const(Value::Int(4)))] });
         let isnil_id = prog.push_insn(block_id, Op::IsNil { v: Opnd::Insn(phi_id) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::objects(&vec![TRUE_CLASS, INT_CLASS]));
         assert_eq!(result.type_of(isnil_id), Type::Bool);
     }
@@ -2183,7 +2183,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let lt0_id = prog.push_insn(block_id, Op::LessThan { v0: Opnd::Const(Value::Int(7)), v1: Opnd::Const(Value::Int(8)) });
         let lt1_id = prog.push_insn(block_id, Op::LessThan { v0: Opnd::Const(Value::Int(8)), v1: Opnd::Const(Value::Int(8)) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(lt0_id), Type::Const(Value::Bool(true)));
         assert_eq!(result.type_of(lt1_id), Type::Const(Value::Bool(false)));
     }
@@ -2193,7 +2193,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, Opnd::Const(Value::Int(7)))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::Const(Value::Int(7)));
     }
 
@@ -2202,7 +2202,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, Opnd::Const(Value::Int(8)))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::Int);
     }
 
@@ -2211,7 +2211,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let add_id = prog.push_insn(block_id, Op::Add { v0: Opnd::Const(Value::Int(3)), v1: Opnd::Const(Value::Int(4)) });
         let phi_id = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(add_id)), (block_id, TRUE)] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::objects(&vec![INT_CLASS, TRUE_CLASS]));
     }
 
@@ -2222,7 +2222,7 @@ mod sctp_tests {
         let then_block = prog.new_block(fun_id);
         let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: Opnd::Insn(phi_id), then_block, else_block });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi_id), Type::Int);
         assert_eq!(result.is_executable(then_block), true);
         assert_eq!(result.is_executable(else_block), true);
@@ -2234,7 +2234,7 @@ mod sctp_tests {
         let then_block = prog.new_block(fun_id);
         let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: TRUE, then_block, else_block });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(then_block), true);
         assert_eq!(result.is_executable(else_block), false);
     }
@@ -2245,7 +2245,7 @@ mod sctp_tests {
         let then_block = prog.new_block(fun_id);
         let else_block = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::IfTrue { val: FALSE, then_block, else_block });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(then_block), false);
         assert_eq!(result.is_executable(else_block), true);
     }
@@ -2255,7 +2255,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let target = prog.new_block(fun_id);
         let iftrue_id = prog.push_insn(block_id, Op::Jump { target });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(target), true);
     }
 
@@ -2265,7 +2265,7 @@ mod sctp_tests {
         let (target, target_entry) = prog.new_fun();
         let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Const(Value::Int(5)) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(target_entry), true);
         assert_eq!(result.is_executable(block_id), true);
         assert_eq!(result.type_of(send_id), Type::Const(Value::Int(5)));
@@ -2278,7 +2278,7 @@ mod sctp_tests {
         let param_id = prog.push_insn(target_entry, Op::Param { idx: 0 });
         let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(target_entry), true);
         assert_eq!(result.type_of(param_id), Type::Const(Value::Int(5)));
     }
@@ -2291,7 +2291,7 @@ mod sctp_tests {
         let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(param_id) });
         let send0_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(5))] });
         let send1_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(6))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(target_entry), true);
         assert_eq!(result.type_of(param_id), Type::Int);
     }
@@ -2305,7 +2305,7 @@ mod sctp_tests {
         let add_id = prog.push_insn(target_entry, Op::Add { v0: Opnd::Insn(param0_id), v1: Opnd::Insn(param1_id) });
         let return_id = prog.push_insn(target_entry, Op::Return { val: Opnd::Insn(add_id) });
         let send_id = prog.push_insn(block_id, Op::SendStatic { target, args: vec![Opnd::Const(Value::Int(3)), Opnd::Const(Value::Int(4))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(target_entry), true);
         assert_eq!(result.type_of(param0_id), Type::Const(Value::Int(3)));
         assert_eq!(result.type_of(param1_id), Type::Const(Value::Int(4)));
@@ -2336,7 +2336,7 @@ mod sctp_tests {
         let cond = prog.push_insn(body_id, Op::LessThan { v0: Opnd::Insn(n), v1: Opnd::Const(Value::Int(100)) });
         prog.push_insn(body_id, Op::IfTrue { val: Opnd::Insn(cond), then_block: body_id, else_block: end_id });
         prog.push_insn(end_id, Op::Return { val: Opnd::Insn(n) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
 
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(body_id), true);
@@ -2384,7 +2384,7 @@ mod sctp_tests {
         let rec = prog.push_insn(do_mul_id, Op::SendStatic { target: fact_id, args: vec![Opnd::Insn(sub)] });
         let mul = prog.push_insn(do_mul_id, Op::Mul { v0: Opnd::Insn(n), v1: Opnd::Insn(rec) });
         prog.push_insn(do_mul_id, Op::Return { val: Opnd::Insn(mul) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(fact_entry), true);
         assert_eq!(result.is_executable(early_exit_id), true);
@@ -2441,7 +2441,7 @@ mod sctp_tests {
         let rec2 = prog.push_insn(do_add_id, Op::SendStatic { target: fib_id, args: vec![Opnd::Insn(sub2)] });
         let add = prog.push_insn(do_add_id, Op::Add { v0: Opnd::Insn(rec1), v1: Opnd::Insn(rec2) });
         prog.push_insn(do_add_id, Op::Return { val: Opnd::Insn(add) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(entry_id), true);
         assert_eq!(result.is_executable(fib_entry), true);
         assert_eq!(result.is_executable(early_exit_id), true);
@@ -2487,7 +2487,7 @@ mod sctp_tests {
         let phi = prog.push_insn(phi_block_id, Op::Phi { ins: vec![(callee_entry_id, Opnd::Const(Value::Int(0))), (dead_block_id, Opnd::Const(Value::Int(1337)))] });
         prog.push_insn(phi_block_id, Op::Return { val: Opnd::Insn(phi) });
 
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi), Type::Const(Value::Int(0)));
         assert_eq!(result.type_of(outside_call), Type::Const(Value::Int(0)));
     }
@@ -2497,7 +2497,7 @@ mod sctp_tests {
         let (mut prog, fun_id, block_id) = prog_with_empty_fun();
         let obj = prog.push_insn(block_id, Op::New { class: ClassId(3) });
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(obj) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(obj), Type::object(ClassId(3)));
     }
 
@@ -2508,7 +2508,7 @@ mod sctp_tests {
         let obj4 = prog.push_insn(block_id, Op::New { class: ClassId(4) });
         let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj3)), (block_id, Opnd::Insn(obj4))] });
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi), Type::objects(&vec![ClassId(3), ClassId(4)]));
 
     }
@@ -2522,7 +2522,7 @@ mod sctp_tests {
         let return_id = prog.push_insn(method_entry_id, Op::Return { val: Opnd::Insn(param_id) });
         let obj_id = prog.push_insn(block_id, Op::New { class: class_id });
         let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(obj_id), args: vec![Opnd::Const(Value::Int(5))] });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.is_executable(method_entry_id), true);
         assert_eq!(result.type_of(param_id), Type::Const(Value::Int(5)));
     }
@@ -2541,7 +2541,7 @@ mod sctp_tests {
         let phi = prog.push_insn(block_id, Op::Phi { ins: vec![(block_id, Opnd::Insn(obj0)), (block_id, Opnd::Insn(obj1))] });
         let send_id = prog.push_insn(block_id, Op::SendDynamic { method: "foo".into(), self_val: Opnd::Insn(phi), args: vec![Opnd::Const(Value::Int(5))] });
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(phi) });
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(phi), Type::objects(&vec![class0_id, class1_id]));
         assert_eq!(result.type_of(send_id), Type::Int);
     }
@@ -2606,7 +2606,7 @@ mod sctp_tests {
         let getivar_bar_id = prog.push_insn(block_id, Op::GetIvar { name: "bar".into(), self_val: Opnd::Insn(obj) });
         prog.push_insn(block_id, Op::Return { val: Opnd::Insn(getivar_foo_id) });
 
-        let result = sctp(&mut prog);
+        let result = sctp(&prog);
         assert_eq!(result.type_of(getivar_foo_id), Type::Const(Value::Int(4)));
         assert_eq!(result.type_of(getivar_bar_id), Type::Const(Value::Bool(true)));
     }
