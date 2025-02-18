@@ -1,8 +1,10 @@
 # loupe
 
-This is a type and shape analyzer for a very small Ruby subset. It is primarily
-documented in [this Rails at Scale blog post][blog].
+This is a type and shape analyzer based on an extension to [Constant
+Propagation with Conditional Branches][sccp] (PDF) for a very small Ruby
+subset. It is primarily documented in [this Rails at Scale blog post][blog].
 
+[sccp]: https://www.cs.utexas.edu/~lin/cs380c/wegman.pdf
 [blog]: https://railsatscale.com/2025-02-14-interprocedural-sparse-conditional-type-propagation/
 
 ## How to build
