@@ -2774,7 +2774,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_empty_function() {
-        let mut lexer = Lexer::new("def foo() end");
+        let lexer = Lexer::new("def foo() end");
         use Token::*;
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
@@ -2784,7 +2784,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_true() {
-        let mut lexer = Lexer::new("def foo() return true end");
+        let lexer = Lexer::new("def foo() return true end");
         use Token::*;
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
@@ -2795,7 +2795,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_false() {
-        let mut lexer = Lexer::new("def foo() return false end");
+        let lexer = Lexer::new("def foo() return false end");
         use Token::*;
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
@@ -2806,7 +2806,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_nil() {
-        let mut lexer = Lexer::new("def foo() return nil end");
+        let lexer = Lexer::new("def foo() return nil end");
         use Token::*;
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
@@ -2817,7 +2817,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_function_with_params() {
-        let mut lexer = Lexer::new("def foo(a, b) end");
+        let lexer = Lexer::new("def foo(a, b) end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2830,7 +2830,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_two_functions() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo(a, b) end
 def bar(c, d) end
 ");
@@ -2851,7 +2851,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_const_add() {
-        let mut lexer = Lexer::new("def add() 1+2 end");
+        let lexer = Lexer::new("def add() 1+2 end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2863,7 +2863,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_add() {
-        let mut lexer = Lexer::new("def add(a, b) a+b end");
+        let lexer = Lexer::new("def add(a, b) a+b end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2877,7 +2877,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_add_mul() {
-        let mut lexer = Lexer::new("def add(a, b, c) a+b*c end");
+        let lexer = Lexer::new("def add(a, b, c) a+b*c end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2893,7 +2893,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_mul_add() {
-        let mut lexer = Lexer::new("def add(a, b, c) a*b+c end");
+        let lexer = Lexer::new("def add(a, b, c) a*b+c end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2909,7 +2909,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_explicit_return() {
-        let mut lexer = Lexer::new("def foo() return 1 end");
+        let lexer = Lexer::new("def foo() return 1 end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2920,7 +2920,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_implicit_return_last_value() {
-        let mut lexer = Lexer::new("def foo() 1 end");
+        let lexer = Lexer::new("def foo() 1 end");
         let mut parser = Parser::from_lexer(lexer);
         parser.parse_program();
         let prog = parser.prog;
@@ -2931,7 +2931,7 @@ def bar(c, d) end
 
     #[test]
     fn test_parse_function_assign() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   a = 123
   return a+1
@@ -2947,7 +2947,7 @@ end");
 
     #[test]
     fn test_parse_function_assign_twice() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   a = 123
   a = 456
@@ -2964,7 +2964,7 @@ end");
 
     #[test]
     fn test_parse_function_double_assign() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   a = b = 3
   return a+b
@@ -2987,7 +2987,7 @@ end");
 
     #[test]
     fn test_parse_empty_if() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   if 1
   end
@@ -3010,7 +3010,7 @@ end");
 
     #[test]
     fn test_parse_empty_if_else() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   if 1
   else
@@ -3044,7 +3044,7 @@ end");
         // e is defined before and not modified
         // f is defined only in then
         // g is defined only in else
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo()
   a = 1
   b = 4
@@ -3109,7 +3109,7 @@ end");
 
     #[test]
     fn test_parse_call_no_args() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def bar()
 end
 def foo()
@@ -3132,7 +3132,7 @@ end");
 
     #[test]
     fn test_parse_call_one_arg() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def bar()
 end
 def foo()
@@ -3155,7 +3155,7 @@ end");
 
     #[test]
     fn test_parse_call_multiple_args() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def bar()
 end
 def foo()
@@ -3182,7 +3182,7 @@ end");
 
     #[test]
     fn test_parse_call_method_no_args() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo(o)
   o.bar()
 end");
@@ -3200,7 +3200,7 @@ end");
 
     #[test]
     fn test_parse_call_method() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo(o)
   o.bar(1, 2, 3)
 end");
@@ -3222,7 +3222,7 @@ end");
 
     #[test]
     fn test_parse_read_ivar() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def foo(o)
   o.bar
 end");
@@ -3240,7 +3240,7 @@ end");
 
     #[test]
     fn test_parse_empty_class() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
 end");
         let mut parser = Parser::from_lexer(lexer);
@@ -3254,7 +3254,7 @@ end");
 
     #[test]
     fn test_parse_class_with_ivars() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   attr_accessor :a
   attr_accessor :b
@@ -3270,7 +3270,7 @@ end");
 
     #[test]
     fn test_parse_class_with_methods() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def foo(a, b)
   end
@@ -3296,7 +3296,7 @@ end");
 
     #[test]
     fn test_parse_class_with_ctor() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def foo(a, b)
   end
@@ -3315,7 +3315,7 @@ end");
 
     #[test]
     fn test_parse_class_with_ivars_and_methods() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   attr_accessor :a
   attr_accessor :b
@@ -3337,7 +3337,7 @@ end");
 
     #[test]
     fn test_parse_method_set_ivar() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def foo()
     @a = 1
@@ -3360,7 +3360,7 @@ end");
 
     #[test]
     fn test_parse_method_get_ivar() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def foo()
     @a
@@ -3383,7 +3383,7 @@ end");
 
     #[test]
     fn test_parse_classes() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
 end
 class D
@@ -3399,7 +3399,7 @@ end");
 
     #[test]
     fn test_parse_class_new_no_args() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def initialize()
   end
@@ -3423,7 +3423,7 @@ end
 
     #[test]
     fn test_parse_class_new_with_args() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 class C
   def initialize(a, b)
   end
@@ -3450,7 +3450,7 @@ end
 
     #[test]
     fn test_parse_factorial() {
-        let mut lexer = Lexer::new("
+        let lexer = Lexer::new("
 def factorial(n)
   if n < 2
     1
