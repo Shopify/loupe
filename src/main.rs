@@ -1478,7 +1478,7 @@ fn main()
 
 
 
-    let prog = gen_torture_test(20_000);
+    let prog = gen_torture_test(200_000);
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
 
     // Check that all functions marked executable
