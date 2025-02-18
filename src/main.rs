@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
-#![allow(unused_mut)]
 
 use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
 use std::cmp::{min, max};
@@ -443,15 +442,15 @@ impl Program {
         match &self.insns[self.blocks[block.0].insns.last().unwrap().0].op {
             Op::Return { .. } => (),
             Op::IfTrue { then_block, else_block, .. } => {
-                if !visited.contains(&then_block) {
+                if !visited.contains(then_block) {
                     self.po_traverse_from(*then_block, result, visited);
                 }
-                if !visited.contains(&else_block) {
+                if !visited.contains(else_block) {
                     self.po_traverse_from(*else_block, result, visited);
                 }
             }
             Op::Jump { target } => {
-                if !visited.contains(&target) {
+                if !visited.contains(target) {
                     self.po_traverse_from(*target, result, visited);
                 }
             }
@@ -669,7 +668,7 @@ fn sctp(prog: &Program) -> AnalysisResult
 
     let mut itr_count = 0;
 
-    while block_worklist.len() > 0 || insn_worklist.len() > 0
+    while !block_worklist.is_empty() || !insn_worklist.is_empty()
     {
         while let Some(insn_id) = insn_worklist.pop_front() {
             itr_count += 1;
@@ -709,7 +708,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                 for send_insn in &called_by[fun_id.0] {
                     assert!(matches!(prog.insns[send_insn.0].op, Op::SendStatic { .. } | Op::SendDynamic { .. }));
                     let old_type = &types[send_insn.0];
-                    if union(old_type, &type_of(&val)) != *old_type {
+                    if union(old_type, &type_of(val)) != *old_type {
                         insn_worklist.push_back(*send_insn);
                     }
                 }
@@ -772,7 +771,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                     let result = match type_of(self_val) {
                         Type::Object(classes) => {
                             for class_id in classes.iter() {
-                                getivars.entry((ClassId(class_id), name)).or_insert(HashSet::new()).insert(insn_id);
+                                getivars.entry((ClassId(class_id), name)).or_default().insert(insn_id);
                             }
                             classes.iter().fold(Type::Empty, |acc, class_id| union(&acc, &ivar_types[class_id][name]))
                         }
@@ -786,7 +785,7 @@ fn sctp(prog: &Program) -> AnalysisResult
                         Type::Object(classes) => {
                             let val_ty = type_of(val);
                             for class_id in classes.iter() {
-                                let mut old_type = ivar_types[class_id].get_mut(name).unwrap();
+                                let old_type = ivar_types[class_id].get_mut(name).unwrap();
                                 let union_type = union(old_type, &val_ty);
                                 if union_type != *old_type {
                                     *old_type = union_type;
@@ -902,7 +901,7 @@ fn sctp(prog: &Program) -> AnalysisResult
             };
             // TODO(max): Make some shortcuts for checking if union(old, new) != old
             // For example, something like if new > old, this is an easy yes
-            if union(&old_type, &new_type) != *old_type {
+            if union(old_type, &new_type) != *old_type {
                 types[insn_id.0] = new_type;
                 for use_id in &insn_uses[insn_id.0] {
                     if is_insn_reachable(*use_id) {
@@ -1128,7 +1127,7 @@ fn gen_torture_test(num_funs: usize) -> Program
     let mut rng = LCG::new(1337);
 
     let callees = random_dag(&mut rng, num_funs, 1, 10);
-    assert!(callees[0].len() > 0);
+    assert!(!callees[0].is_empty());
 
     let mut prog = Program::default();
 
@@ -1185,7 +1184,7 @@ fn gen_torture_test(num_funs: usize) -> Program
 
                 // Compute the sum
                 let phi_id = prog.push_insn(sum_block, Op::Phi { ins: vec![(nil_block, ZERO), (int_block, Opnd::Insn(call_insn))] });
-                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(phi_id) });
+                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val, v1: Opnd::Insn(phi_id) });
                 sum_val = Opnd::Insn(add_id);
                 last_block = sum_block;
             }
@@ -1322,7 +1321,7 @@ fn gen_torture_test_2(num_classes: usize, num_roots: usize, dag_size: usize) -> 
                 );
 
                 // Add this value to the sum
-                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val.clone(), v1: Opnd::Insn(call_insn) });
+                let add_id = prog.push_insn(sum_block, Op::Add { v0: sum_val, v1: Opnd::Insn(call_insn) });
                 sum_val = Opnd::Insn(add_id);
             }
 
@@ -1380,7 +1379,7 @@ fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
                 for insn_id in &block.insns {
                     let insn = &prog.insns[insn_id.0];
                     match result {
-                        Some(ref result) if !insn.op.is_terminator() => {
+                        Some(result) if !insn.op.is_terminator() => {
                             let ty = result.type_of(*insn_id);
                             println!("    {insn_id}:{ty:?} = {:?}", insn.op);
                         }
@@ -1465,7 +1464,7 @@ fn main()
     for (fun_id, fun) in prog.funs.iter().enumerate() {
         let entry_id = fun.entry_block;
 
-        if !fun.name.starts_with("m") && !result.block_executable[entry_id.0] {
+        if !fun.name.starts_with('m') && !result.block_executable[entry_id.0] {
             panic!("function {fun_id} entry block not marked executable: {:?}", fun);
         }
     }
@@ -1759,7 +1758,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn join_vars(&mut self, mut env: &mut HashMap<String, Opnd>,
+    fn join_vars(&mut self, env: &mut HashMap<String, Opnd>,
                  left_block: BlockId, left_env: &HashMap<String, Opnd>,
                  right_block: BlockId, right_env: &HashMap<String, Opnd>) {
         let all_keys_set: HashSet<&String> = HashSet::from_iter(left_env.keys().chain(right_env.keys()));
@@ -1783,7 +1782,7 @@ impl<'a> Parser<'a> {
                     }
                     return (self.block, result);
                 }
-                _ => { result = self.parse_statement(&mut env); }
+                _ => { result = self.parse_statement(env); }
             }
         }
     }
@@ -1792,13 +1791,13 @@ impl<'a> Parser<'a> {
         match self.input.peek() {
             Some(Token::Return) => {
                 self.input.next();
-                let val = self.parse_expression(&mut env);
+                let val = self.parse_expression(env);
                 self.prog.push_insn(self.block, Op::Return { val });
                 Opnd::Const(Value::Nil)  // TODO(max): Empty?
             }
             Some(Token::If) => {
                 self.input.next();
-                let val = self.parse_expression(&mut env);
+                let val = self.parse_expression(env);
                 let before_if_block = self.block;
                 let then_block = self.prog.new_block(self.fun);
                 let join_block = self.prog.new_block(self.fun);
@@ -1812,24 +1811,24 @@ impl<'a> Parser<'a> {
                     self.block = else_block;
                     let (else_end_block, else_result) = self.parse_block(&mut else_env, join_block);
                     self.block = join_block;
-                    self.join_vars(&mut env, then_block, &then_env, else_block, &else_env);
+                    self.join_vars(env, then_block, &then_env, else_block, &else_env);
                     self.expect(Token::End);
                     self.phi(then_end_block, &then_result, else_end_block, &else_result)
                 } else {
                     self.prog.push_insn(before_if_block, Op::IfTrue { val, then_block, else_block: join_block });
                     self.block = join_block;
                     let if_env = env.clone();
-                    self.join_vars(&mut env, before_if_block, &if_env, then_block, &then_env);
+                    self.join_vars(env, before_if_block, &if_env, then_block, &then_env);
                     self.expect(Token::End);
                     self.phi(before_if_block, &Opnd::Const(Value::Nil), then_end_block, &then_result)
                 }
             }
-            _ => { self.parse_expression(&mut env) }
+            _ => { self.parse_expression(env) }
         }
     }
 
     fn parse_expression(&mut self, mut env: &mut HashMap<String, Opnd>) -> Opnd {
-        self.parse_(&mut env, 0)
+        self.parse_(env, 0)
     }
 
     fn prec(token: &Token) -> i8 {
@@ -1873,7 +1872,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::LParen) => {
                 self.input.next();
-                let result = self.parse_(&mut env, 0);
+                let result = self.parse_(env, 0);
                 self.expect(Token::RParen);
                 result
             }
@@ -1885,7 +1884,7 @@ impl<'a> Parser<'a> {
                     // TODO(max): Something about precedence. Don't allow if > 0?
                     Some(Token::Equal) => {
                         self.input.next();
-                        let rhs = self.parse_expression(&mut env);
+                        let rhs = self.parse_expression(env);
                         Opnd::Insn(self.prog.push_insn(self.block, Op::SetIvar { name, self_val: self.get_self(), val: rhs }))
                     }
                     _ => {
@@ -1901,7 +1900,7 @@ impl<'a> Parser<'a> {
                         // It's an assignment. The name isn't in the environment yet. Parse right
                         // to get the value so we can insert it.
                         self.input.next();
-                        let rhs = self.parse_expression(&mut env);
+                        let rhs = self.parse_expression(env);
                         if name == "true" || name == "false" || name == "nil" {
                             panic!("Can't assign to true/false/nil");
                         }
@@ -1935,7 +1934,7 @@ impl<'a> Parser<'a> {
                     }
                     self.input.next();
                     let next_prec = if Self::assoc(&op) == Assoc::Left { op_prec + 1 } else { op_prec };
-                    let rhs = self.parse_(&mut env, next_prec);
+                    let rhs = self.parse_(env, next_prec);
                     lhs = Opnd::Insn(self.prog.push_insn(self.block, match op {
                         Token::Plus => Op::Add { v0: lhs, v1: rhs },
                         Token::Minus => Op::Sub { v0: lhs, v1: rhs },
@@ -1949,7 +1948,7 @@ impl<'a> Parser<'a> {
                     self.input.next();
                     let mut args = vec![];
                     while self.input.peek() != Some(&Token::RParen) {
-                        args.push(self.parse_(&mut env, 0));
+                        args.push(self.parse_(env, 0));
                         if !self.match_token(Token::Comma) { break; }
                     }
                     self.expect(Token::RParen);
@@ -1973,7 +1972,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::LParen);
                     let mut args = vec![];
                     while self.input.peek() != Some(&Token::RParen) {
-                        args.push(self.parse_(&mut env, 0));
+                        args.push(self.parse_(env, 0));
                         if !self.match_token(Token::Comma) { break; }
                     }
                     self.expect(Token::RParen);
