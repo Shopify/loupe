@@ -1407,7 +1407,6 @@ where
 fn main()
 {
     let prog = gen_torture_test_2(5_000, 200, 750);
-    //let prog = gen_torture_test_2(500, 20, 1);
 
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
 
@@ -1469,12 +1468,7 @@ fn main()
 
     //print_prog(&prog, Some(result));
 
-
-
-
-
-
-
+    // Second torture test
     let prog = gen_torture_test(200_000);
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
 
