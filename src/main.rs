@@ -8,7 +8,7 @@ use bit_set::BitSet;
 // around the program. We are doing a lot of needlessly expensive SipHash when we don't need DOS
 // protection.
 
-/// Produce an string representation of an integer with comma separator for thousands
+/// Produce a string representation of an integer with comma separator for thousands
 pub fn int_str_grouped<Int: ToString>(n: Int) -> String
 {
     let num_chars: Vec<char> = n.to_string().chars().rev().collect();
@@ -44,59 +44,59 @@ impl LCG {
         }
     }
 
-    // Avoid using the lower bits as they are less random
+    /// Avoid using the lower bits as they are less random
     pub fn next(&mut self) -> u64 {
         self.state = self.state.wrapping_mul(self.a).wrapping_add(self.c);
         self.state
     }
 
-    // Get only the most significant 32 bits which are more random
+    /// Get only the most significant 32 bits which are more random
     pub fn next_u32(&mut self) -> u32 {
         (self.next() >> 32) as u32
     }
 
-    // Generate a random boolean
+    /// Generate a random boolean
     pub fn rand_bool(&mut self) -> bool {
         (self.next() & (1 << 60)) != 0
     }
 
-    // Choose a random index in [0, max[
+    /// Choose a random index in [0, max[
     pub fn rand_index(&mut self, max: usize) -> usize {
         (self.next_u32() as usize) % max
     }
 
-    // Uniformly distributed usize in [min, max]
+    /// Uniformly distributed usize in [min, max]
     pub fn rand_usize(&mut self, min: usize, max: usize) -> usize {
         assert!(max >= min);
         min + (self.next_u32() as usize) % (1 + max - min)
     }
 
-    // Returns true with a specific percentage of probability
+    /// Returns true with a specific percentage of probability
     pub fn pct_prob(&mut self, percent: usize) -> bool {
         let idx = self.rand_index(100);
         idx < percent
     }
 
-    // Pick a random element from a slice
+    /// Pick a random element from a slice
     pub fn choice<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
         assert!(!slice.is_empty());
         &slice[self.rand_index(slice.len())]
     }
 
-    // Generate a random float between 0 and 1
+    /// Generate a random float between 0 and 1
     pub fn rand_float(&mut self) -> f64 {
         (self.next_u32() as f64) / (u32::MAX as f64)
     }
 
-    // Sample an integer from a Pareto distribution with bounds
-    // This version includes a maximum value to prevent extremely large numbers
-    // alpha: shape parameter (must be positive)
-    // min_value: scale parameter (must be positive)
-    //
-    // The alpha parameter controls the shape of the distribution:
-    // - Lower alpha values (e.g., 1.1) produce more extreme values
-    // - Higher alpha values (e.g., 3.0) produce values more concentrated near the minimum
-    //
+    /// Sample an integer from a Pareto distribution with bounds
+    /// This version includes a maximum value to prevent extremely large numbers
+    /// alpha: shape parameter (must be positive)
+    /// min_value: scale parameter (must be positive)
+    ///
+    /// The alpha parameter controls the shape of the distribution:
+    /// - Lower alpha values (e.g., 1.1) produce more extreme values
+    /// - Higher alpha values (e.g., 3.0) produce values more concentrated near the minimum
+    ///
     pub fn pareto_int(&mut self, alpha: f64, min_value: u64, max_value: u64) -> u64 {
         assert!(alpha > 0.0, "Alpha must be positive");
         assert!(min_value > 0, "Minimum value must be positive");
@@ -120,14 +120,13 @@ impl LCG {
 pub struct Class {
     name: String,
 
-    // List of fields
+    /// List of fields
     ivars: Vec<String>,
 
-    // List of methods
+    /// List of methods
     methods: HashMap<String, FunId>,
 
-    // KISS, ignore for now
-    // Constructor method
+    /// Constructor method
     ctor: Option<FunId>,
 }
 
@@ -167,22 +166,24 @@ impl std::fmt::Display for FunId {
 #[derive(Debug, Clone, PartialEq)]
 enum Type
 {
-    // Empty is the empty set (no info propagated yet or unreachable)
+    /// Empty is the empty set (no info propagated yet or unreachable)
     Empty,
     Const(Value),
-    Int,  // Special case of Object(INT_CLASS)
-    Bool,  // Special case of Object(TRUE_CLASS, FALSE_CLASS)
+    Int,  /// Special case of Object(INT_CLASS)
+    Bool,  /// Special case of Object(TRUE_CLASS, FALSE_CLASS)
     Object(BitSet),
     Any,
 }
 
 impl Type {
+    /// Type with one class
     fn object(class_id: ClassId) -> Type {
         let mut result = BitSet::with_capacity(class_id.0);
         result.insert(class_id.0);
         Type::Object(result)
     }
 
+    /// Type with two classes
     fn two_objects(l: ClassId, r: ClassId) -> Type {
         let mut result = BitSet::with_capacity(if l.0 > r.0 { l.0 } else { r.0 });
         result.insert(l.0);
@@ -190,6 +191,7 @@ impl Type {
         Type::Object(result)
     }
 
+    /// Type with all classes in `class_ids`
     fn objects(class_ids: &Vec<ClassId>) -> Type {
         assert!(!class_ids.is_empty(), "Use Type::Empty instead");
         let mut result = BitSet::with_capacity(class_ids.iter().map(|cid| cid.0).max().unwrap());
@@ -200,6 +202,7 @@ impl Type {
     }
 
     #[inline]
+    /// Return the corresponding ClassId for the Type so it can be used in a bitset.
     fn class_id(&self) -> ClassId {
         match self {
             Type::Const(Value::Nil) => NIL_CLASS,
@@ -212,6 +215,7 @@ impl Type {
     }
 }
 
+/// Union the two types, keeping the result as small as possible
 fn union(left: &Type, right: &Type) -> Type {
     match (left, right) {
         (Type::Any, _) | (_, Type::Any) => Type::Any,
@@ -240,7 +244,7 @@ fn union(left: &Type, right: &Type) -> Type {
     }
 }
 
-// Home of our interprocedural CFG
+/// Home of our interprocedural CFG
 #[derive(Debug)]
 struct Program
 {
@@ -252,7 +256,7 @@ struct Program
 
     insns: Vec<Insn>,
 
-    // Main/entry function
+    /// Main/entry function
     main: FunId,
 }
 
@@ -272,7 +276,7 @@ impl Default for Program {
 }
 
 impl Program {
-    // Register a class and assign it an id
+    /// Register a class and assign it an id
     pub fn new_class(&mut self) -> ClassId {
         let id = self.classes.len();
         self.classes.push(Class {
@@ -284,7 +288,7 @@ impl Program {
         ClassId(id)
     }
 
-    // Register a class and assign it an id
+    /// Register a named class and assign it an id
     pub fn new_class_with_name(&mut self, name: String) -> ClassId {
         let id = self.classes.len();
         self.classes.push(Class {
@@ -296,7 +300,7 @@ impl Program {
         ClassId(id)
     }
 
-    // Register a class and assign it an id
+    /// Register a named class and assign it an id and an empty constructor
     pub fn new_class_with_ctor(&mut self, name: String) -> (ClassId, (FunId, BlockId)) {
         let id = self.classes.len();
         let ctor = self.new_fun();
@@ -309,13 +313,13 @@ impl Program {
         (ClassId(id), ctor)
     }
 
-    // Register a new ivar
+    /// Register a new ivar associated with a class
     fn push_ivar(&mut self, class: ClassId, name: String) {
         assert!(!self.classes[class.0].ivars.contains(&name));
         self.classes[class.0].ivars.push(name.clone());
     }
 
-    // Register a method associated with a class
+    /// Register a method associated with a class
     pub fn new_method(&mut self, class_id: ClassId, name: String) -> (FunId, BlockId) {
         let (m_id, b_id) = self.new_fun_with_name(name.clone());
 
@@ -328,7 +332,7 @@ impl Program {
         (m_id, b_id)
     }
 
-    // Register a method associated with a class
+    /// Register a method associated with a class
     pub fn register_method(&mut self, class_id: ClassId, name: String, fun_id: FunId) {
         // Register the method with the given class
         let k = &mut self.classes[class_id.0];
@@ -336,7 +340,7 @@ impl Program {
         k.methods.insert(name, fun_id);
     }
 
-    // Register a named function and assign it an id
+    /// Register a named function and assign it an id
     pub fn new_fun_with_name(&mut self, name: String) -> (FunId, BlockId) {
         let id = FunId(self.funs.len());
         let entry_block = self.new_block(id);
@@ -344,18 +348,19 @@ impl Program {
         (id, entry_block)
     }
 
-    // Register a function and assign it an id
+    /// Register a function and assign it an id
     pub fn new_fun(&mut self) -> (FunId, BlockId) {
         self.new_fun_with_name("".to_string())
     }
 
-    // Register a block and assign it an id
+    /// Register a block and assign it an id
     pub fn new_block(&mut self, fun_id: FunId) -> BlockId {
         let id = BlockId(self.blocks.len());
         self.blocks.push(Block { fun_id, insns: vec![] });
         id
     }
 
+    /// Check if the block already has a terminator (Return, IfTrue, ...) at the end
     fn block_is_terminated(&self, block: BlockId) -> bool {
         match self.blocks[block.0].insns.last() {
             Some(insn_id) if self.insns[insn_id.0].op.is_terminator() => true,
@@ -363,7 +368,7 @@ impl Program {
         }
     }
 
-    // Add an instruction to the program
+    /// Add an instruction to the program
     pub fn push_insn(&mut self, block: BlockId, op: Op) -> InsnId {
         // Check that we're not adding insns after a branch in an already terminated block
         if self.block_is_terminated(block) {
@@ -383,10 +388,12 @@ impl Program {
         id
     }
 
+    /// Allocate an instance of the class and call its "initialize" method, if it exists
     fn create_instance(&mut self, block_id: BlockId, class_id: ClassId) -> InsnId {
         self.create_instance_with_args(block_id, class_id, Vec::<Opnd>::new())
     }
 
+    /// Allocate an instance of the class and call its "initialize" method with the given arguments, if it exists
     fn create_instance_with_args(&mut self, block_id: BlockId, class_id: ClassId, args: Vec<Opnd>) -> InsnId {
         let obj = self.push_insn(block_id, Op::New { class: class_id });
         match self.classes[class_id.0].ctor {
@@ -398,6 +405,7 @@ impl Program {
         obj
     }
 
+    /// Add an operand to the given phi instruction
     fn add_phi_arg(&mut self, insn_id: InsnId, block_id: BlockId, opnd: Opnd) {
         let insn = &mut self.insns[insn_id.0];
         match insn {
@@ -406,18 +414,22 @@ impl Program {
         }
     }
 
+    /// Return the first block in a function
     fn entry_of(&self, fun_id: FunId) -> BlockId {
         self.funs[fun_id.0].entry_block
     }
 
+    /// Return the function that contains the given instruction
     fn fun_containing(&self, insn_id: InsnId) -> FunId {
         self.blocks[self.insns[insn_id.0].block_id.0].fun_id
     }
 
+    /// Look up the given method on the given class
     fn lookup_method(&self, class_id: ClassId, method_name: &String) -> Option<FunId> {
         self.classes[class_id.0].methods.get(method_name).copied()
     }
 
+    /// Produce a reverse post order traversal of the function's control-flow graph
     pub fn rpo(&self, fun_id: FunId) -> Vec<BlockId> {
         self.rpo_from(self.funs[fun_id.0].entry_block)
     }
@@ -473,13 +485,10 @@ struct Function
 #[derive(Debug)]
 struct Block
 {
-    // Do we need to keep the phi nodes separate?
-
     fun_id: FunId,
     insns: Vec<InsnId>,
 }
 
-// Remove this if the only thing we store is op
 #[derive(Debug, PartialEq)]
 struct Insn
 {
@@ -498,11 +507,11 @@ pub enum Value {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Opnd {
-    // Constant
+    /// Constant
     Const(Value),
 
-    // Output of a previous insn in a block
-    // that dominates this one
+    /// Output of a previous insn in a block
+    /// that dominates this one
     Insn(InsnId),
 }
 
@@ -521,42 +530,50 @@ const FALSE_CLASS: ClassId = ClassId(3);
 #[derive(Debug, PartialEq)]
 enum Op
 {
+    /// Merge all incoming operands
     Phi { ins: Vec<(BlockId, Opnd)> },
+    /// Perform an integer add
     Add { v0: Opnd, v1: Opnd },
+    /// Perform an integer subtract
     Sub { v0: Opnd, v1: Opnd },
+    /// Perform an integer multiply
     Mul { v0: Opnd, v1: Opnd },
+    /// Perform an integer less than
     LessThan { v0: Opnd, v1: Opnd },
+    /// Return TRUE_CLASS if the opnd is nil and FALSE_CLASS otherwise
     IsNil { v: Opnd },
 
-    // Create a new instance of the class
+    /// Create a new instance of the class
     New { class: ClassId },
 
-    // Start with a static send (no dynamic lookup)
-    // to get the basics of the analysis working
+    /// Start with a static send (no dynamic lookup)
+    /// to get the basics of the analysis working
     SendStatic { target: FunId, args: Vec<Opnd> },
 
-    // Dynamic dispatch to a method with a given name
+    /// Dynamic dispatch to a method with a given name
     SendDynamic { method: String, self_val: Opnd, args: Vec<Opnd> },
 
-    // The caller blocks this function can return to are stored
-    // on the Function object this instruction belongs to
+    /// The caller blocks this function can return to are stored
+    /// on the Function object this instruction belongs to
     Return { val: Opnd },
 
-    // Load self parameter
+    /// Load self parameter
     SelfParam { class_id: ClassId },
-    // Load a function parameter.
+    /// Load a function parameter.
     Param { idx: usize },
 
-    // Get/set ivar values
+    /// Get/set ivar values
     SetIvar { name: String, self_val: Opnd, val: Opnd },
     GetIvar { name: String, self_val: Opnd, },
 
+    /// If `val` is true, jump to `then_block`. Otherwise, jump to `else_block`.
     IfTrue { val: Opnd, then_block: BlockId, else_block: BlockId  },
+    /// Unconditionally jump to `target`.
     Jump { target: BlockId }
 }
 
 impl Op {
-    // Check whether this is a branch which terminates a block
+    /// Check whether this is a branch/return, which terminates a block
     fn is_terminator(&self) -> bool {
         match self {
             Op::Return {..} => true,
@@ -568,22 +585,22 @@ impl Op {
 }
 
 struct AnalysisResult {
-    // Indexable by BlockId; indicates if the given block is potentially executable/reachable
+    /// Indexable by BlockId; indicates if the given block is potentially executable/reachable
     block_executable: Vec<bool>,
 
-    // Indexable by InsnId; indicates the computed type of the result of the instruction
-    // Instructions without outputs do not have types and their entries in this vector mean nothing
+    /// Indexable by InsnId; indicates the computed type of the result of the instruction
+    /// Instructions without outputs do not have types and their entries in this vector mean nothing
     insn_type: Vec<Type>,
 
-    // Map of instructions to instructions that use them
-    // uses[A] = { B, C } means that B and C both use A in their operands
+    /// Map of instructions to instructions that use them
+    /// uses[A] = { B, C } means that B and C both use A in their operands
     insn_uses: Vec<Vec<InsnId>>,
 
-    // Number of iterations needed by the type analysis to
-    // compute its result
+    /// Number of iterations needed by the type analysis to
+    /// compute its result
     itr_count: usize,
 
-    // Map of insn -> set of instructions that call the function containing insns
+    /// Map of insn -> set of instructions that call the function containing insns
     called_by: Vec<HashSet<InsnId>>,
 }
 
@@ -597,7 +614,7 @@ impl AnalysisResult {
     }
 }
 
-// Sparse conditionall type propagation
+/// Sparse conditional type propagation
 #[inline(never)]
 fn sctp(prog: &Program) -> AnalysisResult
 {
@@ -929,7 +946,7 @@ fn sctp(prog: &Program) -> AnalysisResult
 }
 
 #[inline(never)]
-// Map of InsnId -> instructions that use that insn
+/// Map of InsnId -> instructions that use that insn
 fn compute_uses(prog: &Program) -> Vec<Vec<InsnId>> {
     // Map of instructions to instructions that use them
     // uses[A] = { B, C } means that B and C both use A in their operands
@@ -1094,7 +1111,7 @@ fn analyze_ctor(prog: &Program, class: ClassId) -> SmallBitSet {
     result
 }
 
-// Generate a random acyclic call graph
+/// Generate a random acyclic call graph
 fn random_dag(rng: &mut LCG, num_nodes: usize, min_parents: usize, max_parents: usize) -> Vec<Vec<usize>>
 {
     let mut callees: Vec<Vec<usize>> = Vec::new();
@@ -1391,7 +1408,7 @@ fn print_prog(prog: &Program, result: Option<&AnalysisResult>) {
     }
 }
 
-// Time the execution of a function, produce a value in milliseconds
+/// Time the execution of a function, produce a value in milliseconds
 fn time_exec_ms<F, T>(f: F) -> (T, f64)
 where
     F: FnOnce() -> T
@@ -1406,6 +1423,8 @@ where
 
 fn main()
 {
+    // ---- Generate and analyze torture test with methods ----
+
     let prog = gen_torture_test_2(5_000, 200, 750);
 
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
@@ -1466,9 +1485,8 @@ fn main()
         }
     }
 
-    //print_prog(&prog, Some(result));
+    // ---- Generate and analyze torture test without methods ----
 
-    // Second torture test
     let prog = gen_torture_test(200_000);
     let (result, time_ms) = time_exec_ms(|| sctp(&prog));
 
@@ -1500,6 +1518,7 @@ fn main()
     println!("itr count: {}", int_str_grouped(result.itr_count));
     println!("analysis time: {:.1} ms", time_ms);
 
+    // ---- Parse simple program and analyze it ----
 
     let sample_program = "
 class Point
