@@ -593,7 +593,7 @@ struct AnalysisResult {
     insn_type: Vec<Type>,
 
     /// Map of instructions to instructions that use them
-    /// uses[A] = { B, C } means that B and C both use A in their operands
+    /// uses\[A\] = { B, C } means that B and C both use A in their operands
     insn_uses: Vec<Vec<InsnId>>,
 
     /// Number of iterations needed by the type analysis to
