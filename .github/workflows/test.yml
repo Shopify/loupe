@@ -6,8 +6,8 @@ jobs:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.58
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@17c4a42132dd491d3fdb7ac56549fc1404125c96 # 1.58
         with:
           components: rustfmt
       - run: cargo test
